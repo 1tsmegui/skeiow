@@ -1,0 +1,21 @@
+.section-heading {
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto var(--space-xl);
+}
+
+.section-heading__title {
+  font-size: 32px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 640px) {
+  .section-heading {
+    margin-bottom: var(--space-lg);
+  }
+
+  .section-heading__title {
+    font-size: 25px;
+  }
+}

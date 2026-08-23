@@ -1,0 +1,10 @@
+#root {
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  width: 100%;
+  min-height: 100vh;
+  text-align: left;
+  border-inline: none;
+  box-sizing: border-box;
+}

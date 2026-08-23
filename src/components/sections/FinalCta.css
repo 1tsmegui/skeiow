@@ -1,0 +1,220 @@
+.final-cta {
+  position: relative;
+  padding: calc(var(--section-padding) + 30px) 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  text-align: center;
+  isolation: isolate;
+  min-height: 620px;
+  display: flex;
+  align-items: center;
+}
+
+.final-cta__bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+
+.final-cta__bg-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  filter: brightness(0.55) saturate(0.75);
+  transition: filter 1.1s ease;
+}
+
+.final-cta--active .final-cta__bg-video {
+  filter: brightness(1.08) saturate(1.15);
+}
+
+.final-cta__bg-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 900px 560px at 50% 42%, rgba(20, 6, 30, 0.15), rgba(5, 4, 13, 0.55) 60%),
+    linear-gradient(180deg, rgba(5, 4, 13, 0.35) 0%, rgba(5, 4, 13, 0.25) 40%, rgba(5, 4, 13, 0.75) 100%);
+}
+
+.final-cta__glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse 800px 400px at 50% 40%, rgba(170, 59, 255, 0.1), transparent 65%);
+  pointer-events: none;
+  animation: final-cta-pulse 5s ease-in-out infinite;
+  transition: background 1.1s ease;
+}
+
+.final-cta--active .final-cta__glow {
+  background: radial-gradient(ellipse 900px 480px at 50% 38%, rgba(200, 70, 255, 0.32), transparent 68%);
+}
+
+@keyframes final-cta-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.final-cta__inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 30px 20px;
+  opacity: 0.85;
+  transform: scale(0.98);
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+
+.final-cta--active .final-cta__inner {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.final-cta__title {
+  font-size: 44px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  font-weight: 800;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.55);
+  transition: text-shadow 1.1s ease;
+}
+
+.final-cta--active .final-cta__title {
+  text-shadow: 0 2px 34px rgba(0, 0, 0, 0.5), 0 0 46px rgba(200, 70, 255, 0.35);
+}
+
+.final-cta__title-gradient {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Requisito 1: flutuação vertical sutil e contínua no texto principal */
+.final-cta__title--float {
+  animation: final-cta-float 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes final-cta-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.final-cta__text {
+  display: block;
+  color: var(--text-secondary, #d8d3e6);
+  font-size: 16.5px;
+  line-height: 1.65;
+  margin: var(--space-md) 0 var(--space-lg);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+}
+
+.final-cta__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  padding: 17px 36px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 16.5px;
+  color: #fff;
+  background: var(--gradient-brand);
+  box-shadow: 0 14px 40px -10px rgba(255, 46, 166, 0.55);
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.final-cta__button span {
+  transition: transform var(--transition-base);
+}
+
+.final-cta__button:hover span {
+  transform: translateX(3px);
+}
+
+/* Requisito 2: respiração leve no glow do botão (pulse na opacidade do brilho) */
+.final-cta__button--glow {
+  animation: final-cta-button-glow 4.5s ease-in-out infinite;
+}
+
+@keyframes final-cta-button-glow {
+  0%,
+  100% {
+    box-shadow: 0 14px 40px -10px rgba(255, 46, 166, 0.55);
+  }
+  50% {
+    box-shadow: 0 14px 48px -8px rgba(255, 46, 166, 0.85);
+  }
+}
+
+.final-cta__button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 46px -10px rgba(255, 46, 166, 0.65);
+}
+
+.final-cta__button:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.final-cta__caption {
+  margin-top: var(--space-md);
+  color: var(--text-muted);
+  font-size: 13.5px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 640px) {
+  .final-cta {
+    padding: var(--space-2xl) 0;
+    min-height: 0;
+  }
+
+  .final-cta__inner {
+    padding: 20px 16px;
+  }
+
+  .final-cta__title {
+    font-size: 28px;
+  }
+
+  .final-cta__text {
+    font-size: 15px;
+  }
+}
+
+/* Requisito 3: respeita prefers-reduced-motion, desativando todas as animações */
+@media (prefers-reduced-motion: reduce) {
+  .final-cta__glow,
+  .final-cta__title--float,
+  .final-cta__button--glow {
+    animation: none;
+  }
+
+  .final-cta__bg-video {
+    display: none;
+  }
+
+  .final-cta__bg {
+    background: var(--bg-void);
+  }
+
+  .final-cta__inner {
+    opacity: 1;
+    transform: none;
+  }
+}

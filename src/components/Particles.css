@@ -1,0 +1,78 @@
+.particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.particles__dot {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  filter: blur(0.5px);
+  animation-name: particle-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.particles--subtle .particles__dot {
+  box-shadow: 0 0 6px 1px currentColor;
+  opacity: 0;
+}
+
+.particles--intense .particles__dot {
+  box-shadow: 0 0 10px 2px currentColor;
+}
+
+@keyframes particle-float {
+  0% {
+    transform: translate3d(0, 6px, 0) scale(0.85);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(-4px, -14px, 0) scale(1);
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translate3d(3px, -26px, 0) scale(0.85);
+    opacity: 0;
+  }
+}
+
+.particles--intense .particles__dot {
+  animation-name: particle-float-intense;
+}
+
+@keyframes particle-float-intense {
+  0% {
+    transform: translate3d(0, 10px, 0) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  55% {
+    transform: translate3d(-6px, -22px, 0) scale(1.15);
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(5px, -40px, 0) scale(0.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particles {
+    display: none;
+  }
+}

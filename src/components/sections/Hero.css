@@ -1,0 +1,126 @@
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 76px 0 90px;
+  min-height: 620px;
+  display: flex;
+  align-items: center;
+}
+
+.hero__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero__bg-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 25% center;
+  display: block;
+}
+
+.hero__bg-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      100deg,
+      rgba(5, 4, 13, 0.78) 0%,
+      rgba(5, 4, 13, 0.55) 32%,
+      rgba(5, 4, 13, 0.32) 55%,
+      rgba(5, 4, 13, 0.58) 100%
+    ),
+    linear-gradient(180deg, rgba(5, 4, 13, 0.15) 0%, transparent 30%, var(--bg-void) 100%);
+}
+
+.hero__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+
+.hero__copy-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hero__title {
+  font-size: 44px;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.hero__subtitle {
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 480px;
+  margin: 18px 0 26px;
+}
+
+.hero__cta {
+  display: inline-block;
+  text-decoration: none;
+  padding: 13px 26px;
+  border-radius: 12px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14.5px;
+  color: #fff;
+  background: var(--gradient-brand);
+  box-shadow: 0 10px 30px -8px rgba(255, 46, 166, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hero__cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px -8px rgba(255, 46, 166, 0.55);
+}
+
+.hero__form-col {
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 980px) {
+  .hero {
+    padding: 48px 0 64px;
+    min-height: 0;
+  }
+
+  .hero__inner {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+
+  .hero__title {
+    font-size: 32px;
+  }
+
+  .hero__copy-col {
+    align-items: center;
+    text-align: center;
+  }
+
+  .hero__subtitle {
+    max-width: none;
+  }
+
+  .hero__bg-video {
+    object-position: 38% center;
+  }
+
+  .hero__bg-scrim {
+    background:
+      linear-gradient(180deg, rgba(5, 4, 13, 0.6) 0%, rgba(5, 4, 13, 0.72) 55%, var(--bg-void) 100%);
+  }
+}

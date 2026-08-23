@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --bg-void: #05040d;
+  --bg-alt: #0a0918;
+  --card-bg: #0d0c1c;
+  --card-border: #201f38;
+  --card-border-hover: #33305a;
+  --text-primary: #f4f3fb;
+  --text-muted: #8b88a8;
+  --brand-pink: #ff2ea6;
+  --brand-purple: #7b2ff7;
+  --gradient-brand: linear-gradient(90deg, var(--brand-pink), var(--brand-purple));
+
+  --font-heading: 'Sora', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  /* Spacing scale — keeps section rhythm consistent across the site */
+  --space-xs: 8px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 40px;
+  --space-xl: 64px;
+  --space-2xl: 96px;
+  --section-padding: 96px;
+
+  /* Radius scale */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+
+  /* Neon-tinted elevation, used sparingly on interactive surfaces */
+  --shadow-card: 0 20px 45px -24px rgba(0, 0, 0, 0.55);
+  --shadow-card-hover: 0 24px 55px -20px rgba(123, 47, 247, 0.28);
+  --shadow-glow-pink: 0 14px 36px -12px rgba(255, 46, 166, 0.4);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: 0.25s var(--ease-out);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 76px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font: 16px/155% var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+.container {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 0 20px;
+  }
+}
+
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand-pink);
+  margin-bottom: 14px;
+}
+
+.gradient-text {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.underline-accent {
+  width: 46px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--gradient-brand);
+  margin-top: 16px;
+}
+
+.underline-accent--center {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Boxed "content column" look (docs/landing style), opt-in only */
+.page-shell {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  min-height: 100svh;
+  box-sizing: border-box;
+}
+
+/* Scroll-reveal utility (driven by the Reveal component). Discreet by
+   design: short distance, short duration, no bounce, one-time trigger. */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Soft ambient glow blob used behind section content for the neon-premium
+   feel established in the hero — decorative only, ignored by assistive tech. */
+.section-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  z-index: 0;
+}
