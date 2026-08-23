@@ -1,13 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserIcon, LockIcon, EyeIcon, LogoMark } from './icons';
 import './LoginCard.css';
 
 export default function LoginCard() {
   const [showPassword, setShowPassword] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = (e) => {
     e.preventDefault();
     // TODO: plug into your auth call (e.g. POST /auth/login)
+    navigate('/painel');
   };
 
   return (
