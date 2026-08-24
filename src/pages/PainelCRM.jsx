@@ -1,29 +1,70 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Eye, EyeOff, Phone, UserCircle2, Sun, Moon, LogOut, X, Send, Hand } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Phone,
+  UserCircle2,
+  Sun,
+  Moon,
+  LogOut,
+  X,
+  Send,
+  Hand,
+  Home,
+  CheckSquare,
+  Settings,
+  Bell,
+  Plus,
+  ChevronDown,
+} from 'lucide-react';
 
 // URL do webhook de envio do seu n8n (ver .env). Ex:
 // VITE_N8N_ENVIAR_MENSAGEM_URL=https://seu-n8n.com/webhook/enviar-mensagem
 const N8N_ENVIAR_MENSAGEM_URL = import.meta.env.VITE_N8N_ENVIAR_MENSAGEM_URL;
+
+const GRADIENTE_MARCA = 'linear-gradient(135deg, #ec4899, #a855f7)';
 
 // status_id -> chave visual. 1/2/3 confirmados no seu classificador.
 // 4 (roxo) é uma suposição — ajuste aqui se o número real for outro.
 const STATUS_POR_ID = { 1: 'branco', 2: 'vermelho', 3: 'verde', 4: 'roxo' };
 
 const STATUS_CONFIG = {
-  branco: { titulo: 'Branco', descricao: 'Aguardando validação', corDot: 'bg-white border-2 border-slate-400' },
-  vermelho: { titulo: 'Vermelho', descricao: 'Intervenção humana', corDot: 'bg-red-500' },
-  verde: { titulo: 'Verde', descricao: 'Validados e sorteados para vendedores', corDot: 'bg-emerald-500' },
-  roxo: { titulo: 'Roxo', descricao: 'Clientes que viraram contrato', corDot: 'bg-violet-500' },
+  branco: {
+    titulo: 'Branco',
+    descricao: 'Aguardando validação',
+    corDot: 'bg-white border-2 border-slate-400',
+    accent: '#94a3b8',
+  },
+  vermelho: {
+    titulo: 'Vermelho',
+    descricao: 'Intervenção humana',
+    corDot: 'bg-red-500',
+    accent: '#ef4444',
+  },
+  verde: {
+    titulo: 'Verde',
+    descricao: 'Validados e sorteados para vendedores',
+    corDot: 'bg-emerald-500',
+    accent: '#10b981',
+  },
+  roxo: {
+    titulo: 'Roxo',
+    descricao: 'Clientes que viraram contrato',
+    corDot: 'bg-violet-500',
+    accent: '#8b5cf6',
+  },
 };
 
 function useTema(escuro) {
   return escuro
     ? {
-        pagina: '#0a0a14',
-        card: 'bg-white/[0.02] border-white/10',
-        cardItem: 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06]',
+        escuro: true,
+        pagina: '#07060f',
+        sidebar: 'bg-[#0d0c1c] border-white/10',
+        card: 'bg-white/[0.03] border-white/10',
+        cardItem: 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]',
         headerBorda: 'border-white/10',
         textoPrimario: 'text-slate-100',
         textoSecundario: 'text-slate-400',
@@ -31,18 +72,28 @@ function useTema(escuro) {
         badge: 'bg-white/10 text-slate-300',
         botao: 'border-white/10 text-slate-300 hover:bg-white/5',
         bolhaCliente: 'bg-white/[0.06] text-slate-100',
+        navIconAtivo: 'bg-white/10 text-white',
+        navIconInativo: 'text-slate-500 hover:bg-white/5 hover:text-slate-200',
+        dropdown: 'bg-[#12111f] border-white/10',
+        input: 'bg-white/5 border-white/10 text-slate-100 placeholder:text-slate-500',
       }
     : {
-        pagina: '#f8fafc',
+        escuro: false,
+        pagina: '#f7f7fb',
+        sidebar: 'bg-white border-slate-200',
         card: 'bg-white border-slate-200',
-        cardItem: 'bg-white border-slate-200 hover:border-slate-300',
+        cardItem: 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm',
         headerBorda: 'border-slate-200',
         textoPrimario: 'text-slate-800',
         textoSecundario: 'text-slate-500',
         textoTerciario: 'text-slate-400',
         badge: 'bg-slate-100 text-slate-600',
-        botao: 'border-slate-300 text-slate-600 hover:bg-slate-50',
+        botao: 'border-slate-200 text-slate-600 hover:bg-slate-50',
         bolhaCliente: 'bg-slate-100 text-slate-800',
+        navIconAtivo: 'bg-pink-50 text-pink-600',
+        navIconInativo: 'text-slate-400 hover:bg-slate-50 hover:text-slate-600',
+        dropdown: 'bg-white border-slate-200',
+        input: 'bg-white border-slate-200 text-slate-800 placeholder:text-slate-400',
       };
 }
 
@@ -56,13 +107,15 @@ function CartaoLead({ lead, tema, onAbrir, onPegar, pegando }) {
   const statusKey = STATUS_POR_ID[lead.status_id];
   const cfg = statusKey ? STATUS_CONFIG[statusKey] : null;
   return (
-    <div className={`w-full rounded-lg border p-3 transition-colors ${tema.cardItem}`}>
+    <div
+      className={`w-full rounded-xl border p-3.5 shadow-sm transition-all ${tema.cardItem}`}
+    >
       <button type="button" onClick={() => onAbrir(lead)} className="w-full text-left">
         <div className="flex items-center gap-2">
           {cfg && <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${cfg.corDot}`} />}
-          <p className={`truncate text-sm font-medium ${tema.textoPrimario}`}>{lead.nome || 'Sem nome'}</p>
+          <p className={`truncate text-sm font-semibold ${tema.textoPrimario}`}>{lead.nome || 'Sem nome'}</p>
         </div>
-        <div className={`mt-1.5 flex items-center gap-1.5 text-xs ${tema.textoSecundario}`}>
+        <div className={`mt-2 flex items-center gap-1.5 text-xs ${tema.textoSecundario}`}>
           <Phone size={12} />
           <span className="font-mono tabular-nums">{formatarTelefone(lead.telefone)}</span>
         </div>
@@ -79,8 +132,8 @@ function CartaoLead({ lead, tema, onAbrir, onPegar, pegando }) {
           type="button"
           onClick={() => onPegar(lead)}
           disabled={pegando}
-          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium text-white disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{ background: GRADIENTE_MARCA }}
         >
           <Hand size={12} />
           {pegando ? 'Pegando...' : 'Pegar Cliente'}
@@ -90,22 +143,34 @@ function CartaoLead({ lead, tema, onAbrir, onPegar, pegando }) {
   );
 }
 
-function BlocoStatus({ titulo, leads, tema, onAbrirLead, onPegarLead, pegandoId, children, headerExtra }) {
+function BlocoStatus({ titulo, leads, tema, onAbrirLead, onPegarLead, pegandoId, children, headerExtra, accent }) {
   return (
-    <div className={`flex min-w-0 flex-1 flex-col rounded-xl border ${tema.card}`}>
-      <div className={`flex items-center justify-between gap-2 border-b px-3 py-2.5 ${tema.headerBorda}`}>
+    <div
+      className={`flex min-w-0 flex-1 flex-col rounded-2xl border ${tema.card}`}
+      style={{ boxShadow: tema.escuro ? '0 20px 45px -30px rgba(0,0,0,0.6)' : '0 12px 30px -20px rgba(15,23,42,0.15)' }}
+    >
+      <div className={`flex items-center justify-between gap-2 border-b px-4 py-3.5 ${tema.headerBorda}`}>
         <div className="flex min-w-0 items-center gap-2">
+          {accent && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />}
           <h2 className={`truncate text-sm font-semibold ${tema.textoPrimario}`}>{titulo}</h2>
-          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${tema.badge}`}>
-            {leads.length}
+          <span
+            className="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold"
+            style={
+              accent
+                ? { background: `${accent}1a`, color: accent }
+                : undefined
+            }
+          >
+            {!accent && <span className={`rounded-full px-1.5 py-0.5 ${tema.badge}`}>{leads.length}</span>}
+            {accent && leads.length}
           </span>
         </div>
         {headerExtra}
       </div>
       {children}
-      <div className="flex flex-col gap-2 overflow-y-auto p-3" style={{ maxHeight: '560px' }}>
+      <div className="flex flex-col gap-2.5 overflow-y-auto p-3.5" style={{ maxHeight: '560px' }}>
         {leads.length === 0 ? (
-          <p className={`py-6 text-center text-xs ${tema.textoTerciario}`}>Nenhum lead nesse status.</p>
+          <p className={`py-8 text-center text-xs ${tema.textoTerciario}`}>Nenhum lead nesse status.</p>
         ) : (
           leads.map((lead) => (
             <CartaoLead
@@ -248,7 +313,7 @@ function Conversa({ lead, tema, usuario, onFechar }) {
                       className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                         doCliente ? tema.bolhaCliente : 'text-white'
                       }`}
-                      style={doCliente ? {} : { background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
+                      style={doCliente ? {} : { background: GRADIENTE_MARCA }}
                     >
                       {m.texto}
                     </div>
@@ -275,13 +340,132 @@ function Conversa({ lead, tema, usuario, onFechar }) {
             type="submit"
             disabled={enviando || !texto.trim()}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-white disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
+            style={{ background: GRADIENTE_MARCA }}
             aria-label="Enviar"
           >
             <Send size={14} />
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+function ItemSidebar({ icone: Icone, ativo, tema, label }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+        ativo ? tema.navIconAtivo : tema.navIconInativo
+      }`}
+    >
+      <Icone size={18} />
+    </button>
+  );
+}
+
+function Sidebar({ tema, inicial }) {
+  return (
+    <aside
+      className={`hidden w-16 shrink-0 flex-col items-center gap-6 border-r py-5 sm:flex ${tema.sidebar}`}
+    >
+      <div
+        className="flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold text-white"
+        style={{ background: GRADIENTE_MARCA }}
+      >
+        {inicial}
+      </div>
+      <nav className="flex flex-col items-center gap-2">
+        <ItemSidebar icone={Home} ativo tema={tema} label="Painel" />
+        <ItemSidebar icone={CheckSquare} tema={tema} label="Tarefas (em breve)" />
+        <ItemSidebar icone={Settings} tema={tema} label="Configurações (em breve)" />
+      </nav>
+    </aside>
+  );
+}
+
+function ModalNovoLead({ tema, onFechar, onCriado }) {
+  const [nome, setNome] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  async function handleSalvar(e) {
+    e.preventDefault();
+    const nomeLimpo = nome.trim();
+    const telefoneLimpo = telefone.replace(/\D/g, '');
+    if (!nomeLimpo || !telefoneLimpo) {
+      setErro('Preenche nome e telefone.');
+      return;
+    }
+
+    setSalvando(true);
+    setErro('');
+    const { error } = await supabase
+      .from('clientes')
+      .insert({ nome: nomeLimpo, telefone: telefoneLimpo, status_id: 1 });
+
+    if (error) {
+      console.error('Erro ao criar lead:', error);
+      setErro('Não consegui salvar o lead. Confere a policy de INSERT na tabela clientes.');
+      setSalvando(false);
+      return;
+    }
+
+    setSalvando(false);
+    onCriado?.();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <form
+        onSubmit={handleSalvar}
+        className={`w-full max-w-sm rounded-2xl border p-5 ${tema.card}`}
+        style={{ background: tema.escuro ? '#12111f' : '#fff' }}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className={`text-sm font-semibold ${tema.textoPrimario}`}>Novo lead</h3>
+          <button
+            type="button"
+            onClick={onFechar}
+            className={`flex h-7 w-7 items-center justify-center rounded-md border ${tema.botao}`}
+            aria-label="Fechar"
+          >
+            <X size={13} />
+          </button>
+        </div>
+
+        <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Nome</label>
+        <input
+          type="text"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="Nome do cliente"
+          className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+        />
+
+        <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Telefone</label>
+        <input
+          type="text"
+          value={telefone}
+          onChange={(e) => setTelefone(e.target.value)}
+          placeholder="(11) 99999-9999"
+          className={`mb-1 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+        />
+
+        {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
+
+        <button
+          type="submit"
+          disabled={salvando}
+          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+          style={{ background: GRADIENTE_MARCA }}
+        >
+          {salvando ? 'Salvando...' : 'Adicionar lead'}
+        </button>
+      </form>
     </div>
   );
 }
@@ -294,6 +478,9 @@ export default function PainelCRM({ usuario }) {
   const [erroCarregamento, setErroCarregamento] = useState('');
   const [leadAberto, setLeadAberto] = useState(null);
   const [pegandoId, setPegandoId] = useState(null);
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [notifAberta, setNotifAberta] = useState(false);
+  const [modalNovoLead, setModalNovoLead] = useState(false);
   const tema = useTema(escuro);
   const navigate = useNavigate();
 
@@ -379,104 +566,189 @@ export default function PainelCRM({ usuario }) {
   const inicial = (usuario?.nome ?? 'S').charAt(0).toUpperCase();
 
   return (
-    <div className="min-h-screen transition-colors" style={{ background: tema.pagina }}>
-      <div className={`flex items-center justify-between border-b px-5 py-4 ${tema.headerBorda}`}>
-        <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
-          >
-            {inicial}
-          </div>
+    <div className="flex min-h-screen transition-colors" style={{ background: tema.pagina }}>
+      <Sidebar tema={tema} inicial={inicial} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className={`flex items-center justify-between border-b px-5 py-4 ${tema.headerBorda}`}>
           <div>
-            <p className={`text-sm font-semibold ${tema.textoPrimario}`}>{tituloPainel}</p>
+            <p className={`text-base font-bold ${tema.textoPrimario}`} style={{ fontFamily: 'Sora, sans-serif' }}>
+              {tituloPainel}
+            </p>
             <p className={`text-xs ${tema.textoSecundario}`}>{descricaoPainel}</p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEscuro((v) => !v)}
-            aria-label={escuro ? 'Ativar tema claro' : 'Ativar tema escuro'}
-            className={`flex h-8 w-8 items-center justify-center rounded-md border ${tema.botao}`}
-          >
-            {escuro ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
-          <button
-            type="button"
-            onClick={handleSair}
-            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tema.botao}`}
-          >
-            <LogOut size={12} />
-            Sair
-          </button>
-        </div>
-      </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setModalNovoLead(true)}
+              className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 sm:flex"
+              style={{ background: GRADIENTE_MARCA }}
+            >
+              <Plus size={13} />
+              Lead
+            </button>
 
-      {erroCarregamento && (
-        <div className="mx-4 mt-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {erroCarregamento}
-        </div>
-      )}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setNotifAberta((v) => !v);
+                  setMenuAberto(false);
+                }}
+                aria-label="Notificações"
+                className={`relative flex h-9 w-9 items-center justify-center rounded-lg border ${tema.botao}`}
+              >
+                <Bell size={15} />
+                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-pink-500" />
+              </button>
+              {notifAberta && (
+                <div
+                  className={`absolute right-0 z-40 mt-2 w-56 rounded-xl border p-3 text-xs shadow-lg ${tema.dropdown} ${tema.textoSecundario}`}
+                >
+                  Nenhuma notificação nova por enquanto.
+                </div>
+              )}
+            </div>
 
-      <div className="overflow-x-auto p-4">
-        {carregando ? (
-          <p className={`text-sm ${tema.textoSecundario}`}>Carregando clientes...</p>
-        ) : (
-          <div className="flex min-w-[1100px] gap-4">
-            {!souVendedor && (
-              <BlocoStatus
-                titulo="Todos os Contatos"
-                leads={leadsVisiveis}
-                tema={tema}
-                onAbrirLead={setLeadAberto}
-                headerExtra={
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuAberto((v) => !v);
+                  setNotifAberta(false);
+                }}
+                className={`flex items-center gap-1.5 rounded-lg border py-1.5 pl-1.5 pr-2 ${tema.botao}`}
+              >
+                <div
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold text-white"
+                  style={{ background: GRADIENTE_MARCA }}
+                >
+                  {inicial}
+                </div>
+                <ChevronDown size={12} />
+              </button>
+              {menuAberto && (
+                <div className={`absolute right-0 z-40 mt-2 w-44 rounded-xl border p-1.5 shadow-lg ${tema.dropdown}`}>
                   <button
                     type="button"
-                    onClick={() => setMostrarLegenda((v) => !v)}
-                    className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${tema.botao}`}
+                    onClick={() => setEscuro((v) => !v)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium ${tema.navIconInativo}`}
                   >
-                    {mostrarLegenda ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {mostrarLegenda ? 'Ocultar' : 'Legenda'}
+                    {escuro ? <Sun size={13} /> : <Moon size={13} />}
+                    {escuro ? 'Tema claro' : 'Tema escuro'}
                   </button>
-                }
-              >
-                {mostrarLegenda && (
-                  <div className={`flex flex-col gap-1.5 border-b px-3 py-2.5 ${tema.headerBorda}`}>
-                    {Object.values(STATUS_CONFIG).map((cfg) => (
-                      <div key={cfg.titulo} className="flex items-center gap-2 text-xs">
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${cfg.corDot}`} />
-                        <span className={`font-medium ${tema.textoPrimario}`}>{cfg.titulo}:</span>
-                        <span className={tema.textoSecundario}>{cfg.descricao}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </BlocoStatus>
-            )}
+                  <button
+                    type="button"
+                    onClick={handleSair}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-red-500 hover:bg-red-500/10`}
+                  >
+                    <LogOut size={13} />
+                    Sair
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-            {souVendedor && (
-              <BlocoStatus
-                titulo="Vermelhos Disponíveis"
-                leads={vermelhosDisponiveis}
-                tema={tema}
-                onAbrirLead={setLeadAberto}
-                onPegarLead={handlePegarCliente}
-                pegandoId={pegandoId}
-              />
-            )}
-
-            <BlocoStatus titulo="Branco" leads={porStatus('branco')} tema={tema} onAbrirLead={setLeadAberto} />
-            <BlocoStatus titulo="Vermelho" leads={porStatus('vermelho')} tema={tema} onAbrirLead={setLeadAberto} />
-            <BlocoStatus titulo="Verde" leads={porStatus('verde')} tema={tema} onAbrirLead={setLeadAberto} />
-            <BlocoStatus titulo="Roxo" leads={porStatus('roxo')} tema={tema} onAbrirLead={setLeadAberto} />
+        {erroCarregamento && (
+          <div className="mx-5 mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {erroCarregamento}
           </div>
         )}
+
+        <div className="overflow-x-auto p-5">
+          {carregando ? (
+            <p className={`text-sm ${tema.textoSecundario}`}>Carregando clientes...</p>
+          ) : (
+            <div className="flex min-w-[1150px] gap-4">
+              {!souVendedor && (
+                <BlocoStatus
+                  titulo="Todos os clientes"
+                  leads={leadsVisiveis}
+                  tema={tema}
+                  onAbrirLead={setLeadAberto}
+                  headerExtra={
+                    <button
+                      type="button"
+                      onClick={() => setMostrarLegenda((v) => !v)}
+                      className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${tema.botao}`}
+                    >
+                      {mostrarLegenda ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {mostrarLegenda ? 'Ocultar' : 'Legenda'}
+                    </button>
+                  }
+                >
+                  {mostrarLegenda && (
+                    <div className={`flex flex-col gap-1.5 border-b px-3 py-2.5 ${tema.headerBorda}`}>
+                      {Object.values(STATUS_CONFIG).map((cfg) => (
+                        <div key={cfg.titulo} className="flex items-center gap-2 text-xs">
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${cfg.corDot}`} />
+                          <span className={`font-medium ${tema.textoPrimario}`}>{cfg.titulo}:</span>
+                          <span className={tema.textoSecundario}>{cfg.descricao}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </BlocoStatus>
+              )}
+
+              {souVendedor && (
+                <BlocoStatus
+                  titulo="Vermelhos Disponíveis"
+                  leads={vermelhosDisponiveis}
+                  tema={tema}
+                  onAbrirLead={setLeadAberto}
+                  onPegarLead={handlePegarCliente}
+                  pegandoId={pegandoId}
+                  accent={STATUS_CONFIG.vermelho.accent}
+                />
+              )}
+
+              <BlocoStatus
+                titulo="Branco"
+                leads={porStatus('branco')}
+                tema={tema}
+                onAbrirLead={setLeadAberto}
+                accent={STATUS_CONFIG.branco.accent}
+              />
+              <BlocoStatus
+                titulo="Vermelho"
+                leads={porStatus('vermelho')}
+                tema={tema}
+                onAbrirLead={setLeadAberto}
+                accent={STATUS_CONFIG.vermelho.accent}
+              />
+              <BlocoStatus
+                titulo="Verde"
+                leads={porStatus('verde')}
+                tema={tema}
+                onAbrirLead={setLeadAberto}
+                accent={STATUS_CONFIG.verde.accent}
+              />
+              <BlocoStatus
+                titulo="Roxo"
+                leads={porStatus('roxo')}
+                tema={tema}
+                onAbrirLead={setLeadAberto}
+                accent={STATUS_CONFIG.roxo.accent}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {leadAberto && (
         <Conversa lead={leadAberto} tema={tema} usuario={usuario} onFechar={() => setLeadAberto(null)} />
+      )}
+
+      {modalNovoLead && (
+        <ModalNovoLead
+          tema={tema}
+          onFechar={() => setModalNovoLead(false)}
+          onCriado={() => setModalNovoLead(false)}
+        />
       )}
     </div>
   );
