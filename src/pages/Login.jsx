@@ -1,108 +1,112 @@
 import { useState } from 'react';
-import brazilMap from '../assets/brazil-map.webp';
-import { UserIcon, LockIcon, EyeIcon, ShieldIcon, LogoMark } from '../components/icons';
-import './Login.css';
+import { supabase } from '../lib/supabaseClient';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
-  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
 
-  const handleSubmit = (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
-    // TODO: plug into your auth call (e.g. POST /auth/login)
-  };
+    setErro('');
+    setCarregando(true);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
+
+    if (error) {
+      setErro('E-mail ou senha inválidos.');
+      setCarregando(false);
+      return;
+    }
+
+    // Confere se esse login tem um registro correspondente na tabela usuarios.
+    // (auth_id precisa existir na tabela usuarios, apontando pro id do Supabase Auth)
+    const { data: usuario, error: erroUsuario } = await supabase
+      .from('usuarios')
+      .select('id, nome, perfil')
+      .eq('auth_id', data.user.id)
+      .single();
+
+    if (erroUsuario || !usuario) {
+      setErro('Login feito, mas seu usuário não está cadastrado no sistema. Fale com o supervisor.');
+      await supabase.auth.signOut();
+      setCarregando(false);
+      return;
+    }
+
+    // Reload completo (em vez de navigate) evita uma corrida entre o login
+    // e a checagem de sessão no /painel, que fazia pedir login 2x.
+    window.location.assign('/painel');
+  }
 
   return (
-    <div className="login-page">
-      <div className="login-page__glow-backdrop" aria-hidden="true" />
-
-      <section className="login-page__map-panel">
-        <div className="map-panel__frame">
-          <img
-            src={brazilMap}
-            alt="Mapa do Brasil com leads por região"
-            className="map-panel__image"
-          />
-          <div className="map-panel__scanline" aria-hidden="true" />
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 text-center">
+          <div
+            className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
+          >
+            S
+          </div>
+          <h1 className="text-lg font-semibold text-slate-800">Entrar no painel</h1>
+          <p className="text-xs text-slate-500">Acesso restrito à equipe</p>
         </div>
-        <div className="map-panel__ripple" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-      </section>
 
-      <section className="login-page__form-panel">
-        <div className="login-card">
-          <div className="login-card__brand">
-            <LogoMark />
-            <span className="login-card__brand-name">
-              Skeiow<span className="login-card__brand-dot">.com</span>
-            </span>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">E-mail</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoFocus
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              placeholder="seu@email.com"
+            />
           </div>
 
-          <hr className="login-card__divider" />
-
-          <h1 className="login-card__title">Skeiow</h1>
-          <div className="login-card__title-underline" />
-
-          <p className="login-card__tagline">
-            A organização é a chave para o sucesso; um negócio bem
-            organizado está no caminho certo para o crescimento e a
-            eficiência.
-          </p>
-
-          <form className="login-form" onSubmit={handleSubmit}>
-            <label className="login-field">
-              <UserIcon />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Senha</label>
+            <div className="relative">
               <input
-                type="text"
-                name="identifier"
-                placeholder="Usuário, e-mail ou telefone"
-                autoComplete="username"
+                type={mostrarSenha ? 'text' : 'password'}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
                 required
-              />
-            </label>
-
-            <label className="login-field">
-              <LockIcon />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                name="password"
-                placeholder="Senha"
-                autoComplete="current-password"
-                required
+                className="w-full rounded-md border border-slate-300 px-3 py-2 pr-9 text-sm outline-none focus:border-slate-400"
+                placeholder="••••••••"
               />
               <button
                 type="button"
-                className="login-field__toggle"
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                onClick={() => setMostrarSenha((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
               >
-                <EyeIcon open={showPassword} />
+                {mostrarSenha ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
-            </label>
-
-            <div className="login-form__row">
-              <label className="login-form__checkbox">
-                <input type="checkbox" name="remember" />
-                Lembrar de mim
-              </label>
-              <a href="#recuperar-senha" className="login-form__forgot">
-                Esqueceu a senha?
-              </a>
             </div>
+          </div>
 
-            <button type="submit" className="login-submit">
-              Entrar
-            </button>
-          </form>
-        </div>
-      </section>
+          {erro && <p className="text-xs text-red-600">{erro}</p>}
 
-      <footer className="login-page__footer">
-        <ShieldIcon />
-        <span>Todos os direitos reservados</span>
-      </footer>
+          <button
+            type="submit"
+            disabled={carregando}
+            className="mt-2 rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #ec4899, #a855f7)' }}
+          >
+            {carregando ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
