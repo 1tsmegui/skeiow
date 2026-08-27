@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import {
@@ -29,6 +30,7 @@ import {
   Router,
   MessageCircle,
   Info,
+  Wifi,
 } from 'lucide-react';
 
 // URL do webhook de envio do seu n8n (ver .env). Ex:
@@ -39,6 +41,10 @@ const N8N_ENVIAR_MENSAGEM_URL = import.meta.env.VITE_N8N_ENVIAR_MENSAGEM_URL;
 // pelo telefone do cliente. Ex:
 // VITE_N8N_CONSULTAR_CLIENTE_URL=https://seu-n8n.com/webhook/consultar-cliente
 const N8N_CONSULTAR_CLIENTE_URL = import.meta.env.VITE_N8N_CONSULTAR_CLIENTE_URL;
+
+// URL do webhook do bot de Viabilidade (Playwright), exposta via ngrok.
+// Ex: VITE_VIABILIDADE_URL=https://seu-ngrok.ngrok-free.dev/consultar-viabilidade
+const VIABILIDADE_URL = import.meta.env.VITE_VIABILIDADE_URL;
 
 const GRADIENTE_MARCA = 'linear-gradient(135deg, #ec4899, #a855f7)';
 
@@ -142,9 +148,21 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
+  const [posicao, setPosicao] = useState(null);
+  const botaoRef = useRef(null);
+
+  function calcularPosicao() {
+    const rect = botaoRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const larguraPopover = 288; // w-72
+    // Mantém o popover dentro da tela horizontalmente (não deixa cortar na direita).
+    const left = Math.min(rect.left, window.innerWidth - larguraPopover - 12);
+    setPosicao({ top: rect.bottom + 6, left: Math.max(12, left) });
+  }
 
   async function handleAbrir() {
     const vaiAbrir = !aberto;
+    if (vaiAbrir) calcularPosicao();
     setAberto(vaiAbrir);
     if (!vaiAbrir || dados || carregando) return;
 
@@ -157,19 +175,36 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
     setErro('');
     try {
       const resp = await fetch(
-        `${N8N_CONSULTAR_CLIENTE_URL}?telefone=${encodeURIComponent(lead.telefone ?? '')}`
+        `${N8N_CONSULTAR_CLIENTE_URL}?telefone=${encodeURIComponent(lead.telefone ?? '')}`,
+        {
+          headers: {
+            // Evita a página de aviso do ngrok (free tier) quando acessado pelo navegador,
+            // que devolve HTML em vez do JSON esperado.
+            'ngrok-skip-browser-warning': 'true',
+          },
+        }
       );
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!resp.ok || !contentType.includes('application/json')) {
+        console.error('Resposta inesperada da consulta de cliente:', resp.status, contentType);
+        setErro('O webhook não respondeu com dados válidos. Confere se a URL do n8n está no ar.');
+        setCarregando(false);
+        return;
+      }
+
       const resultado = await resp.json();
       setDados({
         nome: resultado.nome || lead.nome || '',
         estado: resultado.estado || '',
         cidade: resultado.cidade || '',
+        bairro: resultado.bairro || '',
         cep: resultado.cep || '',
         end: resultado.end || resultado.endereco || '',
       });
     } catch (err) {
       console.error('Erro ao consultar cliente na planilha:', err);
-      setErro('Não consegui consultar a planilha.');
+      setErro('Não consegui consultar a planilha. Confere se o n8n/ngrok estão ativos.');
     } finally {
       setCarregando(false);
     }
@@ -181,6 +216,7 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
       `NOME: ${dados.nome}`,
       `ESTADO: ${dados.estado}`,
       `CIDADE: ${dados.cidade}`,
+      `BAIRRO: ${dados.bairro}`,
       `CEP: ${dados.cep}`,
       `END: ${dados.end}`,
     ].join('\n');
@@ -188,8 +224,9 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
   }
 
   return (
-    <div className="relative flex-1">
+    <div className="flex-1">
       <button
+        ref={botaoRef}
         type="button"
         onClick={handleAbrir}
         className={`flex w-full items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-semibold transition-colors ${tema.botao}`}
@@ -198,53 +235,62 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
         Informações
       </button>
 
-      {aberto && (
-        <div
-          className={`absolute left-0 top-full z-30 mt-1.5 w-64 rounded-xl border p-3 text-xs shadow-lg ${tema.dropdown}`}
-        >
-          {carregando && <p className={tema.textoSecundario}>Consultando planilha...</p>}
-          {!carregando && erro && <p className="text-red-500">{erro}</p>}
-          {!carregando && !erro && dados && (
-            <>
-              <div className="flex flex-col gap-1">
-                <p className={tema.textoPrimario}>
-                  <span className="font-semibold">NOME:</span> {dados.nome || '—'}
-                </p>
-                <p className={tema.textoPrimario}>
-                  <span className="font-semibold">ESTADO:</span> {dados.estado || '—'}
-                </p>
-                <p className={tema.textoPrimario}>
-                  <span className="font-semibold">CIDADE:</span> {dados.cidade || '—'}
-                </p>
-                <p className={tema.textoPrimario}>
-                  <span className="font-semibold">CEP:</span> {dados.cep || '—'}
-                </p>
-                <p className={tema.textoPrimario}>
-                  <span className="font-semibold">END:</span> {dados.end || '—'}
-                </p>
-              </div>
-              <div className="mt-2.5 flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleCopiar}
-                  className={`flex-1 rounded-md border py-1 text-xs font-medium ${tema.botao}`}
-                >
-                  Copiar
-                </button>
-                {onFecharContrato && (
+      {aberto && posicao && createPortal(
+        <>
+          {/* Camada invisível que fecha o popover ao clicar fora dele. */}
+          <div className="fixed inset-0 z-40" onClick={() => setAberto(false)} />
+          <div
+            className={`fixed z-50 w-72 rounded-xl border p-3 text-xs shadow-lg ${tema.dropdown}`}
+            style={{ top: posicao.top, left: posicao.left }}
+          >
+            {carregando && <p className={tema.textoSecundario}>Consultando planilha...</p>}
+            {!carregando && erro && <p className="text-red-500">{erro}</p>}
+            {!carregando && !erro && dados && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">NOME:</span> {dados.nome || '—'}
+                  </p>
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">ESTADO:</span> {dados.estado || '—'}
+                  </p>
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">CIDADE:</span> {dados.cidade || '—'}
+                  </p>
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">BAIRRO:</span> {dados.bairro || '—'}
+                  </p>
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">CEP:</span> {dados.cep || '—'}
+                  </p>
+                  <p className={tema.textoPrimario}>
+                    <span className="font-semibold">END:</span> {dados.end || '—'}
+                  </p>
+                </div>
+                <div className="mt-2.5 flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => onFecharContrato(lead)}
-                    className="flex-1 rounded-md py-1 text-xs font-medium text-white"
-                    style={{ background: GRADIENTE_MARCA }}
+                    onClick={handleCopiar}
+                    className={`flex-1 rounded-md border py-1 text-xs font-medium ${tema.botao}`}
                   >
-                    Fechar contrato
+                    Copiar
                   </button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+                  {onFecharContrato && (
+                    <button
+                      type="button"
+                      onClick={() => onFecharContrato(lead)}
+                      className="flex-1 rounded-md py-1 text-xs font-medium text-white"
+                      style={{ background: GRADIENTE_MARCA }}
+                    >
+                      Fechar contrato
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -365,6 +411,7 @@ function CartaoContratoRoxo({ lead, contrato, tema }) {
       <div className="mt-2 flex flex-col gap-1">
         <LinhaInfo icone={Hash} tema={tema} label="Contrato" valor={c.contrato} />
         <LinhaInfo icone={MapPin} tema={tema} label="Cidade" valor={c.cidade} />
+        <LinhaInfo icone={MapPin} tema={tema} label="Estado" valor={c.estado} />
         <LinhaInfo icone={Phone} tema={tema} label="Telefone" valor={formatarTelefone(c.telefone_1 || lead.telefone)} />
         <LinhaInfo icone={Phone} tema={tema} label="Telefone 2" valor={c.telefone_2 ? formatarTelefone(c.telefone_2) : null} />
         <LinhaInfo icone={Router} tema={tema} label="HP" valor={c.hp} />
@@ -621,12 +668,13 @@ function Conversa({ lead, tema, usuario, onFechar }) {
   );
 }
 
-function ItemSidebar({ icone: Icone, ativo, tema, label }) {
+function ItemSidebar({ icone: Icone, ativo, tema, label, onClick }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      onClick={onClick}
       className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
         ativo ? tema.navIconAtivo : tema.navIconInativo
       }`}
@@ -636,7 +684,7 @@ function ItemSidebar({ icone: Icone, ativo, tema, label }) {
   );
 }
 
-function Sidebar({ tema, inicial }) {
+function Sidebar({ tema, inicial, telaAtual, onMudarTela }) {
   return (
     <aside
       className={`hidden w-16 shrink-0 flex-col items-center gap-6 border-r py-5 sm:flex ${tema.sidebar}`}
@@ -648,7 +696,20 @@ function Sidebar({ tema, inicial }) {
         {inicial}
       </div>
       <nav className="flex flex-col items-center gap-2">
-        <ItemSidebar icone={Home} ativo tema={tema} label="Painel" />
+        <ItemSidebar
+          icone={Home}
+          ativo={telaAtual === 'painel'}
+          tema={tema}
+          label="Painel"
+          onClick={() => onMudarTela('painel')}
+        />
+        <ItemSidebar
+          icone={Wifi}
+          ativo={telaAtual === 'viabilidade'}
+          tema={tema}
+          label="Viabilidade"
+          onClick={() => onMudarTela('viabilidade')}
+        />
         <ItemSidebar icone={CheckSquare} tema={tema} label="Tarefas (em breve)" />
         <ItemSidebar icone={Settings} tema={tema} label="Configurações (em breve)" />
       </nav>
@@ -696,7 +757,12 @@ function ModalNovoLead({ tema, onFechar, onCriado }) {
         style={{ background: tema.escuro ? '#12111f' : '#fff' }}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className={`text-sm font-semibold ${tema.textoPrimario}`}>Novo lead</h3>
+          <h3
+            className="text-sm font-semibold"
+            style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+          >
+            Novo lead
+          </h3>
           <button
             type="button"
             onClick={onFechar}
@@ -813,6 +879,7 @@ function CampoVendedor({ tema, vendedorId, setVendedorId }) {
 function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
   const [vendedorId, setVendedorId] = useState(lead.vendedor_id ? String(lead.vendedor_id) : '');
   const [cidade, setCidade] = useState('');
+  const [estado, setEstado] = useState('');
   const [nome, setNome] = useState(lead.nome || '');
   const [telefone1, setTelefone1] = useState(lead.telefone || '');
   const [telefone2, setTelefone2] = useState('');
@@ -853,6 +920,7 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
       cliente_id: lead.id,
       vendedor_id: vendedorId || null,
       cidade: cidade.trim() || null,
+      estado: estado.trim() || null,
       nome: nomeLimpo,
       telefone_1: telefone1Limpo,
       telefone_2: telefone2.replace(/\D/g, '') || null,
@@ -882,7 +950,12 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
       >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className={`text-sm font-semibold ${tema.textoPrimario}`}>Fechar contrato</h3>
+            <h3
+              className="text-sm font-semibold"
+              style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+            >
+              Fechar contrato
+            </h3>
             <p className={`text-xs ${tema.textoSecundario}`}>{lead.nome || 'Sem nome'}</p>
           </div>
           <button
@@ -904,6 +977,16 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
           onChange={(e) => setCidade(e.target.value)}
           placeholder="Cidade"
           className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+        />
+
+        <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Estado</label>
+        <input
+          type="text"
+          value={estado}
+          onChange={(e) => setEstado(e.target.value)}
+          placeholder="Ex: DF, GO, SP..."
+          maxLength={2}
+          className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm uppercase outline-none ${tema.input}`}
         />
 
         <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Nome</label>
@@ -981,6 +1064,7 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
 function ModalNovoContrato({ tema, onFechar, onCriado }) {
   const [vendedorId, setVendedorId] = useState('');
   const [cidade, setCidade] = useState('');
+  const [estado, setEstado] = useState('');
   const [nome, setNome] = useState('');
   const [telefone1, setTelefone1] = useState('');
   const [telefone2, setTelefone2] = useState('');
@@ -1027,6 +1111,7 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
       cliente_id: clienteCriado.id,
       vendedor_id: vendedorId || null,
       cidade: cidade.trim() || null,
+      estado: estado.trim() || null,
       nome: nomeLimpo,
       telefone_1: telefone1Limpo,
       telefone_2: telefone2.replace(/\D/g, '') || null,
@@ -1055,7 +1140,12 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
         style={{ background: tema.escuro ? '#12111f' : '#fff' }}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className={`text-sm font-semibold ${tema.textoPrimario}`}>Novo contrato direto</h3>
+          <h3
+            className="text-sm font-semibold"
+            style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+          >
+            Novo contrato direto
+          </h3>
           <button
             type="button"
             onClick={onFechar}
@@ -1075,6 +1165,16 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
           onChange={(e) => setCidade(e.target.value)}
           placeholder="Cidade"
           className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+        />
+
+        <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Estado</label>
+        <input
+          type="text"
+          value={estado}
+          onChange={(e) => setEstado(e.target.value)}
+          placeholder="Ex: DF, GO, SP..."
+          maxLength={2}
+          className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm uppercase outline-none ${tema.input}`}
         />
 
         <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Nome</label>
@@ -1147,6 +1247,270 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
   );
 }
 
+// Badge SIM/NÃO usado na tabela de Serviços disponíveis.
+function BadgeSimNao({ valor }) {
+  return valor ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-500">
+      <CheckCircle2 size={12} />
+      SIM
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-500">
+      <XCircle size={12} />
+      NÃO
+    </span>
+  );
+}
+
+function TelaViabilidade({ tema }) {
+  const [tipoServico, setTipoServico] = useState('COM CABO');
+  const [estado, setEstado] = useState('DISTRITO FEDERAL');
+  const [cidade, setCidade] = useState('BRASILIA');
+  const [cep, setCep] = useState('');
+  const [enderecoAlvo, setEnderecoAlvo] = useState('');
+  const [consultando, setConsultando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState(null);
+
+  async function handleConsultar(e) {
+    e.preventDefault();
+    if (!cep.trim() || !enderecoAlvo.trim()) {
+      setErro('Preenche pelo menos o CEP e o endereço (ex: "BL 02 APT 204").');
+      return;
+    }
+
+    if (!VIABILIDADE_URL) {
+      setErro('VITE_VIABILIDADE_URL não configurada no .env');
+      return;
+    }
+
+    setConsultando(true);
+    setErro('');
+    setResultado(null);
+
+    const params = new URLSearchParams({
+      tipoServico,
+      estado,
+      cidade,
+      cep: cep.trim(),
+      enderecoAlvo: enderecoAlvo.trim(),
+    });
+
+    try {
+      const resp = await fetch(`${VIABILIDADE_URL}?${params.toString()}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!resp.ok || !contentType.includes('application/json')) {
+        setErro('O bot de viabilidade não respondeu direito. Confere se ele tá rodando (node server.js).');
+        setConsultando(false);
+        return;
+      }
+
+      const dados = await resp.json();
+      if (!dados.sucesso) {
+        setErro(dados.erro || 'A consulta não retornou sucesso.');
+        setConsultando(false);
+        return;
+      }
+
+      setResultado(dados);
+    } catch (err) {
+      console.error('Erro ao consultar viabilidade:', err);
+      setErro('Não consegui falar com o bot de viabilidade.');
+    } finally {
+      setConsultando(false);
+    }
+  }
+
+  const situacoes = resultado?.historicoContratos?.contagemPorSituacao ?? {};
+  const temSituacoes = Object.keys(situacoes).length > 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5">
+        <div>
+          <h1
+            className="text-lg font-bold"
+            style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+          >
+            Viabilidade
+          </h1>
+          <p className={`text-xs ${tema.textoSecundario}`}>
+            Consulta a disponibilidade de sinal e o histórico de contratos de um endereço.
+          </p>
+        </div>
+
+        {/* Formulário de busca */}
+        <form
+          onSubmit={handleConsultar}
+          className={`rounded-2xl border p-4 ${tema.card}`}
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>
+                Tipo de Serviço
+              </label>
+              <input
+                type="text"
+                value={tipoServico}
+                onChange={(e) => setTipoServico(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+              />
+            </div>
+            <div>
+              <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Estado</label>
+              <input
+                type="text"
+                value={estado}
+                onChange={(e) => setEstado(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+              />
+            </div>
+            <div>
+              <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>Cidade</label>
+              <input
+                type="text"
+                value={cidade}
+                onChange={(e) => setCidade(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+              />
+            </div>
+            <div>
+              <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>CEP</label>
+              <input
+                type="text"
+                value={cep}
+                onChange={(e) => setCep(e.target.value)}
+                placeholder="71881-807"
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>
+              Endereço do cliente (bloco/apê, o que identificar a linha certa)
+            </label>
+            <input
+              type="text"
+              value={enderecoAlvo}
+              onChange={(e) => setEnderecoAlvo(e.target.value)}
+              placeholder='Ex: "BL 02 APT 204"'
+              className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+            />
+          </div>
+
+          {erro && <p className="mt-3 text-xs text-red-500">{erro}</p>}
+
+          <button
+            type="submit"
+            disabled={consultando}
+            className="mt-4 flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+            style={{ background: GRADIENTE_MARCA }}
+          >
+            <Wifi size={14} />
+            {consultando ? 'Consultando... (pode levar até 1 min)' : 'Consultar Viabilidade'}
+          </button>
+        </form>
+
+        {/* Resultado */}
+        {resultado && (
+          <>
+            <div className={`rounded-2xl border p-4 ${tema.card}`}>
+              <p className={`text-xs ${tema.textoSecundario}`}>Endereço selecionado</p>
+              <p className={`text-sm font-medium ${tema.textoPrimario}`}>{resultado.enderecoSelecionado}</p>
+            </div>
+
+            <div className={`overflow-hidden rounded-2xl border ${tema.card}`}>
+              <div className={`border-b px-4 py-3 ${tema.headerBorda}`}>
+                <h2
+                  className="text-sm font-semibold"
+                  style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+                >
+                  Serviços disponíveis
+                </h2>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={`text-left text-xs ${tema.textoSecundario}`}>
+                    <th className="px-4 py-2 font-medium">Produto</th>
+                    <th className="px-4 py-2 font-medium">Técnica</th>
+                    <th className="px-4 py-2 font-medium">Comercial</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(resultado.servicos ?? {}).map(([produto, info]) => (
+                    <tr key={produto} className={`border-t ${tema.headerBorda}`}>
+                      <td className={`px-4 py-2.5 font-medium ${tema.textoPrimario}`}>{produto}</td>
+                      <td className="px-4 py-2.5">
+                        <BadgeSimNao valor={info.tecnico} />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <BadgeSimNao valor={info.comercial} />
+                      </td>
+                    </tr>
+                  ))}
+                  {Object.keys(resultado.servicos ?? {}).length === 0 && (
+                    <tr>
+                      <td colSpan={3} className={`px-4 py-4 text-center text-xs ${tema.textoTerciario}`}>
+                        Nenhum serviço encontrado nessa consulta.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className={`overflow-hidden rounded-2xl border ${tema.card}`}>
+              <div className={`border-b px-4 py-3 ${tema.headerBorda}`}>
+                <h2
+                  className="text-sm font-semibold"
+                  style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+                >
+                  Histórico de contratos
+                </h2>
+              </div>
+              <div className="flex flex-col gap-2 p-4">
+                {resultado.historicoContratos?.possuiConectado && (
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-500">
+                    <CheckCircle2 size={13} />
+                    Já existe contrato CONECTADO nesse endereço
+                  </span>
+                )}
+                {resultado.historicoContratos?.possuiPendenteInstalacao && (
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-500">
+                    <Calendar size={13} />
+                    Existe contrato PENDENTE DE INSTALAÇÃO
+                  </span>
+                )}
+                {!temSituacoes && (
+                  <p className={`text-xs ${tema.textoTerciario}`}>
+                    Nenhum contrato encontrado no histórico desse endereço.
+                  </p>
+                )}
+                {temSituacoes && (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {Object.entries(situacoes).map(([situacao, qtd]) => (
+                      <span
+                        key={situacao}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${tema.badge}`}
+                      >
+                        {situacao} · {qtd}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PainelCRM({ usuario }) {
   const [escuro, setEscuro] = useState(false);
   const [mostrarLegenda, setMostrarLegenda] = useState(false);
@@ -1163,6 +1527,7 @@ export default function PainelCRM({ usuario }) {
   const [buscaClientes, setBuscaClientes] = useState('');
   const [filtroRoxo, setFiltroRoxo] = useState('meus'); // 'meus' | 'todos' — só usado por vendedor
   const [contratosPorCliente, setContratosPorCliente] = useState({});
+  const [telaAtual, setTelaAtual] = useState('painel'); // 'painel' | 'viabilidade'
   const tema = useTema(escuro);
   const navigate = useNavigate();
 
@@ -1217,7 +1582,7 @@ export default function PainelCRM({ usuario }) {
     async function carregarContratos() {
       const { data, error } = await supabase
         .from('contrato')
-        .select('cliente_id, nome, contrato, cidade, telefone_1, telefone_2, hp, data_instalacao, auditado');
+        .select('cliente_id, nome, contrato, cidade, estado, telefone_1, telefone_2, hp, data_instalacao, auditado');
 
       if (error) {
         console.error('Erro ao buscar contratos:', error);
@@ -1300,7 +1665,7 @@ export default function PainelCRM({ usuario }) {
 
   return (
     <div className="flex min-h-screen transition-colors" style={{ background: tema.pagina }}>
-      <Sidebar tema={tema} inicial={inicial} />
+      <Sidebar tema={tema} inicial={inicial} telaAtual={telaAtual} onMudarTela={setTelaAtual} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className={`flex items-center justify-between border-b px-5 py-4 ${tema.headerBorda}`}>
@@ -1394,12 +1759,15 @@ export default function PainelCRM({ usuario }) {
           </div>
         </div>
 
-        {erroCarregamento && (
+        {telaAtual === 'painel' && erroCarregamento && (
           <div className="mx-5 mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
             {erroCarregamento}
           </div>
         )}
 
+        {telaAtual === 'viabilidade' && <TelaViabilidade tema={tema} />}
+
+        {telaAtual === 'painel' && (
         <div className="overflow-x-auto p-5">
           {carregando ? (
             <p className={`text-sm ${tema.textoSecundario}`}>Carregando clientes...</p>
@@ -1545,6 +1913,7 @@ export default function PainelCRM({ usuario }) {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {leadAberto && (
