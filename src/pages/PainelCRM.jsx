@@ -31,6 +31,12 @@ import {
   MessageCircle,
   Info,
   Wifi,
+  Trash2,
+  Trophy,
+  Handshake,
+  Zap,
+  TrendingUp,
+  Medal,
 } from 'lucide-react';
 
 // URL do webhook de envio do seu n8n (ver .env). Ex:
@@ -143,10 +149,67 @@ function formatarMoeda(valor) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Remove acentos/espaços/pontuação e deixa minúsculo, pra comparar nomes de
+// coluna da planilha sem depender de como o usuário escreveu o cabeçalho
+// (Nome, NOME, nome completo, Nome Completo...).
+function normalizarChave(chave) {
+  return String(chave)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+// Procura, num objeto vindo da planilha, o valor de um campo tentando várias
+// variações de nome de coluna (ex: buscarValor(planilha, 'nome da mae', 'mae')
+// bate em "Nome da Mãe", "NOME_DA_MAE", "mãe", etc). Devolve '' se não achar.
+function buscarValor(objeto, ...possiveisChaves) {
+  if (!objeto) return '';
+  const alvos = possiveisChaves.map(normalizarChave);
+  for (const chave of Object.keys(objeto)) {
+    if (alvos.includes(normalizarChave(chave))) {
+      const valor = objeto[chave];
+      if (valor !== undefined && valor !== null && String(valor).trim() !== '') {
+        return String(valor).trim();
+      }
+    }
+  }
+  return '';
+}
+
+// Monta o bloco de texto no mesmo formato usado pra colar no cadastro da
+// Claro. Campos sem valor ficam em branco (só o rótulo), igual ao modelo.
+// Separado em duas partes porque DATA DE INSTALAÇÃO não vem da planilha —
+// é digitada manualmente pelo vendedor no popover (o bot ainda não grava
+// a data combinada em nenhuma tabela).
+function montarLinhasCadastro(dados) {
+  const cidadeEstado = [dados.cidade, dados.estado].filter(Boolean).join('/');
+  return [
+    '🔴 DADOS PARA CADASTRO CLARO - cancelados sem agenda',
+    `📌VENDEDOR: ${dados.vendedor}`,
+    `📌NOME COMPLETO: ${dados.nomeCompleto}`,
+    `📌CPF/CNPJ: ${dados.cpfCnpj}`,
+    `📌DATA DE NASCIMENTO: ${dados.dataNascimento}`,
+    `📌NOME DA MÃE: ${dados.nomeMae}`,
+    `📌CIDADE/ESTADO: ${cidadeEstado}`,
+    `📌ENDEREÇO: ${dados.endereco}`,
+    `📌CEP: ${dados.cep}`,
+    `📌BAIRRO: ${dados.bairro}`,
+    `📌HP: ${dados.hp}`,
+    `📌E-MAIL: ${dados.email}`,
+    `📌TELEFONE: ${dados.telefone}`,
+  ];
+}
+
+function montarTextoCadastro(dados) {
+  return [...montarLinhasCadastro(dados), `📌DATA DE INSTALAÇÃO: ${dados.dataInstalacao || ''}`].join('\n');
+}
+
 function PopoverInformacoes({ lead, tema, onFecharContrato }) {
   const [aberto, setAberto] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
+  const [dataInstalacao, setDataInstalacao] = useState('');
   const [erro, setErro] = useState('');
   const [posicao, setPosicao] = useState(null);
   const botaoRef = useRef(null);
@@ -154,7 +217,7 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
   function calcularPosicao() {
     const rect = botaoRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const larguraPopover = 288; // w-72
+    const larguraPopover = 384; // w-96
     // Mantém o popover dentro da tela horizontalmente (não deixa cortar na direita).
     const left = Math.min(rect.left, window.innerWidth - larguraPopover - 12);
     setPosicao({ top: rect.bottom + 6, left: Math.max(12, left) });
@@ -174,33 +237,44 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
     setCarregando(true);
     setErro('');
     try {
-      const resp = await fetch(
-        `${N8N_CONSULTAR_CLIENTE_URL}?telefone=${encodeURIComponent(lead.telefone ?? '')}`,
-        {
+      const [respPlanilha, respVendedor] = await Promise.all([
+        fetch(`${N8N_CONSULTAR_CLIENTE_URL}?telefone=${encodeURIComponent(lead.telefone ?? '')}`, {
           headers: {
             // Evita a página de aviso do ngrok (free tier) quando acessado pelo navegador,
             // que devolve HTML em vez do JSON esperado.
             'ngrok-skip-browser-warning': 'true',
           },
-        }
-      );
+        }),
+        lead.vendedor_id
+          ? supabase.from('usuarios').select('nome').eq('id', lead.vendedor_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
 
-      const contentType = resp.headers.get('content-type') || '';
-      if (!resp.ok || !contentType.includes('application/json')) {
-        console.error('Resposta inesperada da consulta de cliente:', resp.status, contentType);
+      const contentType = respPlanilha.headers.get('content-type') || '';
+      if (!respPlanilha.ok || !contentType.includes('application/json')) {
+        console.error('Resposta inesperada da consulta de cliente:', respPlanilha.status, contentType);
         setErro('O webhook não respondeu com dados válidos. Confere se a URL do n8n está no ar.');
         setCarregando(false);
         return;
       }
 
-      const resultado = await resp.json();
+      const planilha = await respPlanilha.json();
+      const nomeVendedor = respVendedor?.data?.nome || '';
+
       setDados({
-        nome: resultado.nome || lead.nome || '',
-        estado: resultado.estado || '',
-        cidade: resultado.cidade || '',
-        bairro: resultado.bairro || '',
-        cep: resultado.cep || '',
-        end: resultado.end || resultado.endereco || '',
+        vendedor: nomeVendedor,
+        nomeCompleto: buscarValor(planilha, 'nome completo', 'nome') || lead.nome || '',
+        cpfCnpj: buscarValor(planilha, 'cpf/cnpj', 'cpf cnpj', 'cpf', 'cnpj'),
+        dataNascimento: buscarValor(planilha, 'data de nascimento', 'data nascimento', 'nascimento'),
+        nomeMae: buscarValor(planilha, 'nome da mae', 'mae'),
+        cidade: buscarValor(planilha, 'cidade'),
+        estado: buscarValor(planilha, 'estado'),
+        endereco: buscarValor(planilha, 'endereco', 'end', 'logradouro'),
+        cep: buscarValor(planilha, 'cep'),
+        bairro: buscarValor(planilha, 'bairro'),
+        hp: buscarValor(planilha, 'hp'),
+        email: buscarValor(planilha, 'e-mail', 'email'),
+        telefone: formatarTelefone(lead.telefone) || buscarValor(planilha, 'telefone'),
       });
     } catch (err) {
       console.error('Erro ao consultar cliente na planilha:', err);
@@ -212,15 +286,7 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
 
   function handleCopiar() {
     if (!dados) return;
-    const texto = [
-      `NOME: ${dados.nome}`,
-      `ESTADO: ${dados.estado}`,
-      `CIDADE: ${dados.cidade}`,
-      `BAIRRO: ${dados.bairro}`,
-      `CEP: ${dados.cep}`,
-      `END: ${dados.end}`,
-    ].join('\n');
-    navigator.clipboard?.writeText(texto);
+    navigator.clipboard?.writeText(montarTextoCadastro({ ...dados, dataInstalacao }));
   }
 
   return (
@@ -240,32 +306,27 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
           {/* Camada invisível que fecha o popover ao clicar fora dele. */}
           <div className="fixed inset-0 z-40" onClick={() => setAberto(false)} />
           <div
-            className={`fixed z-50 w-72 rounded-xl border p-3 text-xs shadow-lg ${tema.dropdown}`}
+            className={`fixed z-50 w-96 max-h-[80vh] overflow-y-auto rounded-xl border p-3 text-xs shadow-lg ${tema.dropdown}`}
             style={{ top: posicao.top, left: posicao.left }}
           >
             {carregando && <p className={tema.textoSecundario}>Consultando planilha...</p>}
             {!carregando && erro && <p className="text-red-500">{erro}</p>}
             {!carregando && !erro && dados && (
               <>
-                <div className="flex flex-col gap-1">
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">NOME:</span> {dados.nome || '—'}
-                  </p>
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">ESTADO:</span> {dados.estado || '—'}
-                  </p>
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">CIDADE:</span> {dados.cidade || '—'}
-                  </p>
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">BAIRRO:</span> {dados.bairro || '—'}
-                  </p>
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">CEP:</span> {dados.cep || '—'}
-                  </p>
-                  <p className={tema.textoPrimario}>
-                    <span className="font-semibold">END:</span> {dados.end || '—'}
-                  </p>
+                <pre
+                  className={`whitespace-pre-wrap break-words font-sans leading-relaxed ${tema.textoPrimario}`}
+                >
+                  {montarLinhasCadastro(dados).join('\n')}
+                </pre>
+                <div className="mt-1 flex items-center gap-1">
+                  <span className={`shrink-0 ${tema.textoPrimario}`}>📌DATA DE INSTALAÇÃO:</span>
+                  <input
+                    type="text"
+                    value={dataInstalacao}
+                    onChange={(e) => setDataInstalacao(e.target.value)}
+                    placeholder="digite olhando a conversa"
+                    className={`min-w-0 flex-1 rounded-md border px-1.5 py-0.5 text-xs outline-none ${tema.input}`}
+                  />
                 </div>
                 <div className="mt-2.5 flex gap-1.5">
                   <button
@@ -296,15 +357,29 @@ function PopoverInformacoes({ lead, tema, onFecharContrato }) {
   );
 }
 
-function CartaoLead({ lead, tema, onAbrir, onPegar, pegando, onFecharContrato }) {
+function CartaoLead({ lead, tema, onAbrir, onPegar, pegando, onFecharContrato, onExcluir }) {
   const statusKey = STATUS_POR_ID[lead.status_id];
   const cfg = statusKey ? STATUS_CONFIG[statusKey] : null;
   const podeFecharContrato = statusKey === 'verde' && onFecharContrato;
 
   return (
     <div
-      className={`w-full rounded-xl border p-3.5 shadow-sm transition-all ${tema.cardItem}`}
+      className={`relative w-full rounded-xl border p-3.5 shadow-sm transition-all ${tema.cardItem}`}
     >
+      {onExcluir && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExcluir(lead);
+          }}
+          title="Excluir cliente"
+          aria-label="Excluir cliente"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-red-500 opacity-70 transition-opacity hover:bg-red-500/10 hover:opacity-100"
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
       {podeFecharContrato ? (
         // Verde: o card em si não abre nada. Só os botões WhatsApp / Informações abaixo.
         <div className="w-full text-left">
@@ -393,11 +468,172 @@ function LinhaInfo({ icone: Icone, tema, label, valor }) {
 }
 
 // Card do bloco Roxo: mostra os dados do contrato direto, sem precisar abrir a conversa.
-function CartaoContratoRoxo({ lead, contrato, tema }) {
+// Classificador simples por palavra-chave — não é IA, é regra fixa.
+// Propositalmente conservador: só marca "sim" ou "nao" quando a frase é
+// bem direta. Qualquer coisa fora desse padrão vira "indefinido", pra
+// nunca arriscar confundir uma recusa com confirmação.
+function classificarRespostaAuditoria(texto) {
+  const limpo = String(texto ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  const PADROES_NAO = [
+    // Palavras soltas
+    /\bnao\b/, /\bnaum\b/, /\bnop\b/, /\bnegativo\b/, /\bimpossivel\b/,
+    // Frases diretas de recusa
+    /nao (posso|consigo|da|vou|tenho|vai dar|sei)/,
+    /nao vou (poder|conseguir)/,
+    /nao (tenho como|vai ser possivel|tenho condi[cç]oes|tenho disponibilidade)/,
+    /sem condi[cç]oes/,
+    /infelizmente/,
+    /nao vai dar certo/,
+  ];
+  const PADROES_SIM = [
+    // Palavras soltas
+    /\bsim\b/, /\bpode\b/, /\bok\b/, /\bokay\b/, /\bbeleza\b/,
+    /\bcerto\b/, /\bpositivo\b/, /\bclaro\b/, /\bconsigo\b/, /\bperfeito\b/,
+    /\btranquilo\b/, /\bautorizad[oa]\b/, /\bconfirmo\b/,
+    // Expressões de concordância
+    /ta bom/, /esta bom/, /de boa/, /sem problemas?/,
+    /com certeza/, /pode(m)? ligar/, /entrar em contato/,
+    /esta autorizado/, /pode entrar em contato/,
+  ];
+
+  // "Não" tem prioridade: uma frase como "não, não posso" não pode cair em "sim"
+  // só porque em algum lugar tem uma palavra parecida.
+  if (PADROES_NAO.some((re) => re.test(limpo))) return 'nao';
+  if (PADROES_SIM.some((re) => re.test(limpo))) return 'sim';
+  return 'indefinido';
+}
+
+const MENSAGEM_PERGUNTA_AUDITORIA =
+  'Oi! Passando pra avisar que a equipe técnica vai entrar em contato com você pra confirmar as informações e seguir com a instalação, tá bom? Fica de olho no telefone 🙂';
+
+function CartaoContratoRoxo({ lead, contrato, tema, onExcluir }) {
   const c = contrato || {};
+  const [enviandoAuditoria, setEnviandoAuditoria] = useState(false);
+  const [erroAuditoria, setErroAuditoria] = useState(false);
+
+  const perguntada = Boolean(c.auditoria_perguntada_em);
+  const resposta = c.auditoria_resposta || null; // 'sim' | 'nao' | 'indefinido' | null
+
+  async function handlePerguntarAuditoria() {
+    if (enviandoAuditoria) return;
+
+    if (!N8N_ENVIAR_MENSAGEM_URL) {
+      setErroAuditoria(true);
+      return;
+    }
+
+    setEnviandoAuditoria(true);
+    setErroAuditoria(false);
+    try {
+      const resp = await fetch(N8N_ENVIAR_MENSAGEM_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliente_id: lead.id,
+          texto: MENSAGEM_PERGUNTA_AUDITORIA,
+          vendedor: 'Auditoria',
+        }),
+      });
+      const resultado = await resp.json();
+      if (!resultado.sucesso) {
+        setErroAuditoria(true);
+      } else {
+        // Marca quando a pergunta foi mandada e limpa qualquer resposta antiga
+        // (caso esteja perguntando de novo). O botão reflete isso via realtime.
+        await supabase
+          .from('contrato')
+          .update({ auditoria_perguntada_em: new Date().toISOString(), auditoria_resposta: null })
+          .eq('cliente_id', lead.id);
+      }
+    } catch (err) {
+      console.error('Erro ao perguntar sobre auditoria:', err);
+      setErroAuditoria(true);
+    } finally {
+      setEnviandoAuditoria(false);
+    }
+  }
+
+  // Enquanto a pergunta já foi mandada mas ainda sem resposta classificada,
+  // escuta em tempo real a mensagem nova do cliente, classifica com regra
+  // simples de palavra-chave (sim/não/indefinido) e grava o resultado.
+  //
+  // IMPORTANTE: a subscription de tempo real só existe enquanto ESTE card
+  // está montado na tela de alguém. Se o cliente respondeu num momento em
+  // que ninguém tinha o painel aberto nesse card específico, o evento passa
+  // batido pra sempre — o realtime não entrega eventos passados. Por isso,
+  // ao montar, primeiro fazemos uma busca única por mensagens do cliente
+  // que já chegaram depois da pergunta ("recuperar o atraso") e só depois
+  // passamos a escutar as futuras.
+  useEffect(() => {
+    if (!perguntada || resposta) return;
+    let cancelado = false;
+
+    async function classificarEGravar(texto) {
+      if (cancelado) return;
+      const classificacao = classificarRespostaAuditoria(texto);
+      await supabase.from('contrato').update({ auditoria_resposta: classificacao }).eq('cliente_id', lead.id);
+    }
+
+    async function recuperarAtraso() {
+      const { data, error } = await supabase
+        .from('mensagens')
+        .select('texto, origem, data')
+        .eq('cliente_id', lead.id)
+        .eq('origem', 'cliente')
+        .gt('data', c.auditoria_perguntada_em)
+        .order('data', { ascending: true })
+        .limit(1);
+
+      if (error) {
+        console.error('Erro ao recuperar resposta de auditoria perdida:', error);
+        return;
+      }
+      if (data && data.length > 0) {
+        await classificarEGravar(data[0].texto);
+      }
+    }
+
+    recuperarAtraso();
+
+    const canal = supabase
+      .channel(`auditoria-cliente-${lead.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'mensagens', filter: `cliente_id=eq.${lead.id}` },
+        async (payload) => {
+          if (payload.new?.origem !== 'cliente') return;
+          await classificarEGravar(payload.new?.texto);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelado = true;
+      supabase.removeChannel(canal);
+    };
+  }, [lead.id, perguntada, resposta, c.auditoria_perguntada_em]);
 
   return (
-    <div className={`w-full rounded-xl border p-3.5 shadow-sm ${tema.cardItem}`}>
+    <div className={`relative w-full rounded-xl border p-3.5 shadow-sm ${tema.cardItem}`}>
+      {onExcluir && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExcluir(lead);
+          }}
+          title="Excluir cliente"
+          aria-label="Excluir cliente"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-red-500 opacity-70 transition-opacity hover:bg-red-500/10 hover:opacity-100"
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
       <div className="flex items-center gap-2">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-500" />
         <p
@@ -416,6 +652,7 @@ function CartaoContratoRoxo({ lead, contrato, tema }) {
         <LinhaInfo icone={Phone} tema={tema} label="Telefone 2" valor={c.telefone_2 ? formatarTelefone(c.telefone_2) : null} />
         <LinhaInfo icone={Router} tema={tema} label="HP" valor={c.hp} />
         <LinhaInfo icone={Calendar} tema={tema} label="Instalação" valor={formatarData(c.data_instalacao)} />
+        <LinhaInfo icone={Calendar} tema={tema} label="Horário" valor={c.horario_instalacao} />
 
         {contrato && (
           <div className="mt-0.5 flex items-center gap-1.5 text-xs font-semibold">
@@ -433,6 +670,45 @@ function CartaoContratoRoxo({ lead, contrato, tema }) {
         {!contrato && (
           <p className={`mt-0.5 text-xs italic ${tema.textoTerciario}`}>Sem dados de contrato cadastrados.</p>
         )}
+
+        {/* Só oferece o botão pros que ainda não foram auditados. */}
+        {contrato && !c.auditado && (
+          <button
+            type="button"
+            onClick={handlePerguntarAuditoria}
+            disabled={enviandoAuditoria || resposta === 'sim'}
+            className="mt-2 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-100"
+            style={{
+              background:
+                resposta === 'sim'
+                  ? '#8b5cf6' // roxo (mesma cor do pontinho de status Roxo), pra diferenciar de "aguardando"
+                  : resposta === 'nao'
+                  ? '#ef4444'
+                  : resposta === 'indefinido'
+                  ? '#d97706'
+                  : '#10b981',
+            }}
+          >
+            {resposta === 'sim' && <CheckCircle2 size={12} />}
+            {resposta === 'nao' && <XCircle size={12} />}
+            {resposta === 'indefinido' && <MessageCircle size={12} />}
+            {!resposta && <MessageCircle size={12} />}
+            {enviandoAuditoria
+              ? 'Enviando...'
+              : resposta === 'sim'
+              ? 'Cliente confirmado'
+              : resposta === 'nao'
+              ? 'Cliente não pode'
+              : resposta === 'indefinido'
+              ? 'Resposta recebida — confere'
+              : perguntada
+              ? 'Pergunta enviada ✓'
+              : 'Perguntar sobre auditoria'}
+          </button>
+        )}
+        {erroAuditoria && (
+          <p className="mt-1 text-xs text-red-500">Não consegui enviar. Confere o webhook de mensagem.</p>
+        )}
       </div>
     </div>
   );
@@ -446,6 +722,7 @@ function BlocoStatus({
   onPegarLead,
   pegandoId,
   onFecharContrato,
+  onExcluir,
   children,
   headerExtra,
   accent,
@@ -496,6 +773,7 @@ function BlocoStatus({
                 onPegar={onPegarLead}
                 pegando={pegandoId === lead.id}
                 onFecharContrato={onFecharContrato}
+                onExcluir={onExcluir}
               />
             )
           )
@@ -710,6 +988,13 @@ function Sidebar({ tema, inicial, telaAtual, onMudarTela }) {
           label="Viabilidade"
           onClick={() => onMudarTela('viabilidade')}
         />
+        <ItemSidebar
+          icone={Trophy}
+          ativo={telaAtual === 'ranking'}
+          tema={tema}
+          label="Ranking de Vendedores"
+          onClick={() => onMudarTela('ranking')}
+        />
         <ItemSidebar icone={CheckSquare} tema={tema} label="Tarefas (em breve)" />
         <ItemSidebar icone={Settings} tema={tema} label="Configurações (em breve)" />
       </nav>
@@ -807,6 +1092,30 @@ function ModalNovoLead({ tema, onFechar, onCriado }) {
 }
 
 // Campo reutilizado nos dois modais de contrato: Sim / Não pro "auditado".
+const OPCOES_HORARIO_INSTALACAO = ['08h às 12h', '12h às 15h', '15h às 18h', '12h às 18h'];
+
+function CampoHorarioInstalacao({ tema, valor, onChange }) {
+  return (
+    <div className="mb-3">
+      <label className={`mb-1 block text-xs font-medium ${tema.textoSecundario}`}>
+        Horário de instalação
+      </label>
+      <select
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
+      >
+        <option value="">Selecione...</option>
+        {OPCOES_HORARIO_INSTALACAO.map((op) => (
+          <option key={op} value={op}>
+            {op}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function CampoAuditado({ tema, valor, onChange }) {
   return (
     <div className="mb-3">
@@ -886,6 +1195,7 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
   const [contrato, setContrato] = useState('');
   const [hp, setHp] = useState('');
   const [dataInstalacao, setDataInstalacao] = useState('');
+  const [horarioInstalacao, setHorarioInstalacao] = useState('');
   const [auditado, setAuditado] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -901,6 +1211,13 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
 
     setSalvando(true);
     setErro('');
+
+    // Guarda o status atual do cliente pra poder desfazer o passo 1 caso o
+    // passo 2 falhe — sem isso, um erro no insert do contrato deixava o
+    // cliente preso em Roxo sem nenhum dado (foi o que aconteceu com o
+    // Guilherme: o F5 não apagou nada, só revelou que o contrato nunca
+    // tinha sido gravado).
+    const statusAnterior = lead.status_id;
 
     // 1) Move o cliente pra Roxo.
     const { error: erroCliente } = await supabase
@@ -927,12 +1244,27 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
       contrato: contrato.trim() || null,
       hp: hp.trim() || null,
       data_instalacao: dataInstalacao || null,
+      horario_instalacao: horarioInstalacao || null,
       auditado,
     });
 
     if (erroContrato) {
       console.error('Erro ao gravar contrato:', erroContrato);
-      setErro('Cliente virou Roxo, mas não consegui salvar os dados do contrato. Confere a tabela "contrato".');
+      // Desfaz o passo 1: volta o cliente pro status de antes, em vez de
+      // deixar ele preso em Roxo sem contrato nenhum.
+      const { error: erroRollback } = await supabase
+        .from('clientes')
+        .update({ status_id: statusAnterior })
+        .eq('id', lead.id);
+      if (erroRollback) {
+        console.error('Erro ao desfazer o status roxo após falha no contrato:', erroRollback);
+        setErro(
+          'Não consegui salvar os dados do contrato E também não consegui desfazer o status Roxo. ' +
+          'Corrige manualmente: o cliente ficou Roxo sem contrato.'
+        );
+      } else {
+        setErro('Não consegui salvar os dados do contrato. O cliente voltou pro status anterior — nada foi perdido.');
+      }
       setSalvando(false);
       return;
     }
@@ -1041,6 +1373,8 @@ function ModalFecharContrato({ lead, tema, usuario, onFechar, onFechado }) {
           className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
         />
 
+        <CampoHorarioInstalacao tema={tema} valor={horarioInstalacao} onChange={setHorarioInstalacao} />
+
         <CampoAuditado tema={tema} valor={auditado} onChange={setAuditado} />
 
         {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
@@ -1071,6 +1405,7 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
   const [contrato, setContrato] = useState('');
   const [hp, setHp] = useState('');
   const [dataInstalacao, setDataInstalacao] = useState('');
+  const [horarioInstalacao, setHorarioInstalacao] = useState('');
   const [auditado, setAuditado] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -1118,12 +1453,25 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
       contrato: contrato.trim() || null,
       hp: hp.trim() || null,
       data_instalacao: dataInstalacao || null,
+      horario_instalacao: horarioInstalacao || null,
       auditado,
     });
 
     if (erroContrato) {
       console.error('Erro ao gravar contrato:', erroContrato);
-      setErro('Cliente foi criado, mas não consegui salvar os dados do contrato. Confere a tabela "contrato".');
+      // Como o cliente acabou de ser criado nesta mesma ação, é seguro
+      // apagar ele de volta em vez de deixar um cliente Roxo órfão sem
+      // nenhum dado de contrato.
+      const { error: erroRollback } = await supabase.from('clientes').delete().eq('id', clienteCriado.id);
+      if (erroRollback) {
+        console.error('Erro ao desfazer criação do cliente após falha no contrato:', erroRollback);
+        setErro(
+          'Não consegui salvar os dados do contrato E também não consegui desfazer a criação do cliente. ' +
+          'Corrige manualmente: o cliente ficou Roxo sem contrato.'
+        );
+      } else {
+        setErro('Não consegui salvar os dados do contrato. Nada foi criado — pode tentar de novo.');
+      }
       setSalvando(false);
       return;
     }
@@ -1229,6 +1577,8 @@ function ModalNovoContrato({ tema, onFechar, onCriado }) {
           className={`mb-3 w-full rounded-lg border px-3 py-2 text-sm outline-none ${tema.input}`}
         />
 
+        <CampoHorarioInstalacao tema={tema} valor={horarioInstalacao} onChange={setHorarioInstalacao} />
+
         <CampoAuditado tema={tema} valor={auditado} onChange={setAuditado} />
 
         {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
@@ -1262,6 +1612,16 @@ function BadgeSimNao({ valor }) {
   );
 }
 
+// Incrementa o último número de uma string de endereço (ex: "BL 02 APT 204" ->
+// "BL 02 APT 205"), mantendo o resto do texto igual. Usado só pra montar o
+// endereço vizinho no bloco "Conectado mais próximo" da simulação.
+function incrementarNumeroFinal(texto) {
+  const match = texto.match(/(\d+)(\D*)$/);
+  if (!match) return texto;
+  const numeroIncrementado = String(Number(match[1]) + 1).padStart(match[1].length, '0');
+  return texto.slice(0, match.index) + numeroIncrementado + match[2];
+}
+
 function TelaViabilidade({ tema }) {
   const [tipoServico, setTipoServico] = useState('COM CABO');
   const [estado, setEstado] = useState('DISTRITO FEDERAL');
@@ -1279,49 +1639,37 @@ function TelaViabilidade({ tema }) {
       return;
     }
 
-    if (!VIABILIDADE_URL) {
-      setErro('VITE_VIABILIDADE_URL não configurada no .env');
-      return;
-    }
-
     setConsultando(true);
     setErro('');
     setResultado(null);
 
-    const params = new URLSearchParams({
-      tipoServico,
-      estado,
-      cidade,
-      cep: cep.trim(),
-      enderecoAlvo: enderecoAlvo.trim(),
-    });
-
-    try {
-      const resp = await fetch(`${VIABILIDADE_URL}?${params.toString()}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+    // SIMULAÇÃO (temporária): enquanto o bot de Playwright não pode ser
+    // testado contra o site da Claro, essa tela devolve um resultado
+    // fixo no mesmo formato que o bot real retornaria — pra validar o
+    // fluxo/layout sem depender de VIABILIDADE_URL. Pra voltar ao modo
+    // real, é só trocar este bloco de volta pelo fetch(VIABILIDADE_URL).
+    setTimeout(() => {
+      const enderecoVizinho = incrementarNumeroFinal(enderecoAlvo.trim());
+      setResultado({
+        sucesso: true,
+        enderecoSelecionado: `${cidade} / ${estado} — CEP ${cep.trim()} — ${enderecoAlvo.trim()}`,
+        servicos: {
+          PTVDIGITAL: { tecnico: true, comercial: true },
+          VIRTUA: { tecnico: true, comercial: true },
+          VOIP: { tecnico: true, comercial: false },
+          GPON: { tecnico: true, comercial: true },
+        },
+        historicoContratos: {
+          contagemPorSituacao: { CANCELADO: 3 },
+          possuiConectado: false,
+          possuiPendenteInstalacao: false,
+        },
+        conectadoProximo: {
+          enderecoSelecionado: `${cidade} / ${estado} — CEP ${cep.trim()} — ${enderecoVizinho}`,
+        },
       });
-
-      const contentType = resp.headers.get('content-type') || '';
-      if (!resp.ok || !contentType.includes('application/json')) {
-        setErro('O bot de viabilidade não respondeu direito. Confere se ele tá rodando (node server.js).');
-        setConsultando(false);
-        return;
-      }
-
-      const dados = await resp.json();
-      if (!dados.sucesso) {
-        setErro(dados.erro || 'A consulta não retornou sucesso.');
-        setConsultando(false);
-        return;
-      }
-
-      setResultado(dados);
-    } catch (err) {
-      console.error('Erro ao consultar viabilidade:', err);
-      setErro('Não consegui falar com o bot de viabilidade.');
-    } finally {
       setConsultando(false);
-    }
+    }, 1200);
   }
 
   const situacoes = resultado?.historicoContratos?.contagemPorSituacao ?? {};
@@ -1504,8 +1852,298 @@ function TelaViabilidade({ tema }) {
                 )}
               </div>
             </div>
+
+            {resultado.conectadoProximo && (
+              <div className={`overflow-hidden rounded-2xl border ${tema.card}`}>
+                <div className={`border-b px-4 py-3 ${tema.headerBorda}`}>
+                  <h2
+                    className="text-sm font-semibold"
+                    style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+                  >
+                    Conectado mais próximo
+                  </h2>
+                </div>
+                <div className="flex flex-col gap-2 p-4">
+                  <p className={`text-sm font-medium ${tema.textoPrimario}`}>
+                    {resultado.conectadoProximo.enderecoSelecionado}
+                  </p>
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-500">
+                    <CheckCircle2 size={13} />
+                    CONECTADO
+                  </span>
+                </div>
+              </div>
+            )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Card de KPI colorido do topo da tela de Ranking (Contratos Fechados /
+// Conectados / Taxa de Conversão). Cor fixa (não muda com tema claro/escuro),
+// igual ao mockup de referência.
+function CardResumoRanking({ icone: Icone, valor, label, corDe, corPara }) {
+  return (
+    <div
+      className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-white shadow-sm"
+      style={{ background: `linear-gradient(135deg, ${corDe}, ${corPara})` }}
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20">
+        <Icone size={20} />
+      </div>
+      <div>
+        <p className="text-xl font-bold leading-tight">{valor}</p>
+        <p className="text-xs text-white/90">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+// Badge de posição no ranking: ouro/prata/bronze pros 3 primeiros, neutro
+// pros demais — mesmo padrão visual do mockup de referência.
+function BadgePosicao({ posicao }) {
+  const estilos = {
+    1: 'bg-amber-400 text-amber-950',
+    2: 'bg-slate-300 text-slate-800',
+    3: 'bg-orange-700 text-orange-50',
+  };
+  return (
+    <span
+      className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm font-bold ${
+        estilos[posicao] ?? 'bg-slate-500/15 text-slate-500'
+      }`}
+    >
+      {posicao}
+    </span>
+  );
+}
+
+function TelaRanking({ tema }) {
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [ranking, setRanking] = useState([]);
+
+  useEffect(() => {
+    async function carregarRanking() {
+      setCarregando(true);
+      setErro('');
+
+      // Todo contrato fechado (tabela "contrato") já tem o vendedor gravado
+      // (vendedor_id + vendedor). Enquanto não existe status de
+      // conectado/cancelado dentro de "contrato", cada linha aqui é 1
+      // "contrato pendente" (definição combinada: todo contrato do vendedor).
+      const { data: contratos, error: erroContratos } = await supabase
+        .from('contrato')
+        .select('vendedor_id, vendedor');
+
+      if (erroContratos) {
+        console.error('Erro ao buscar contratos para o ranking:', erroContratos);
+        setErro('Não consegui carregar os contratos. Confere a policy de leitura (RLS) na tabela contrato.');
+        setCarregando(false);
+        return;
+      }
+
+      // Traz também os vendedores sem nenhum contrato ainda, pra aparecerem
+      // zerados no ranking em vez de sumirem da lista.
+      const { data: vendedores, error: erroVendedores } = await supabase
+        .from('usuarios')
+        .select('id, nome')
+        .eq('perfil', 'vendedor');
+
+      if (erroVendedores) {
+        console.error('Erro ao buscar vendedores para o ranking:', erroVendedores);
+      }
+
+      const porVendedor = {};
+
+      (vendedores ?? []).forEach((v) => {
+        porVendedor[v.id] = { vendedorId: v.id, nome: v.nome, contratosPendentes: 0 };
+      });
+
+      (contratos ?? []).forEach((c) => {
+        const chave = c.vendedor_id ?? `nome:${c.vendedor ?? 'Sem vendedor'}`;
+        if (!porVendedor[chave]) {
+          porVendedor[chave] = {
+            vendedorId: c.vendedor_id,
+            nome: c.vendedor || 'Sem vendedor',
+            contratosPendentes: 0,
+          };
+        }
+        porVendedor[chave].contratosPendentes += 1;
+      });
+
+      const lista = Object.values(porVendedor).sort(
+        (a, b) => b.contratosPendentes - a.contratosPendentes
+      );
+
+      setRanking(lista);
+      setCarregando(false);
+    }
+
+    carregarRanking();
+
+    // Tempo real: qualquer contrato novo/alterado/apagado recalcula o
+    // ranking sozinho, sem precisar dar F5.
+    const canal = supabase
+      .channel('ranking-contrato-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contrato' }, () => {
+        carregarRanking();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, []);
+
+  const totalContratosFechados = ranking.reduce((soma, v) => soma + v.contratosPendentes, 0);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5">
+      <div className="mx-auto flex max-w-4xl flex-col gap-5">
+        <div>
+          <h1
+            className="text-lg font-bold"
+            style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+          >
+            Ranking de Vendedores
+          </h1>
+          <p className={`text-xs ${tema.textoSecundario}`}>
+            Desempenho geral e por vendedor, atualizado em tempo real.
+          </p>
+        </div>
+
+        {/* Cards de resumo geral */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <CardResumoRanking
+            icone={Handshake}
+            valor={totalContratosFechados}
+            label="Contratos Fechados"
+            corDe="#2563eb"
+            corPara="#1d4ed8"
+          />
+          <CardResumoRanking
+            icone={Zap}
+            valor="— (em breve)"
+            label="Conectados"
+            corDe="#059669"
+            corPara="#047857"
+          />
+          <CardResumoRanking
+            icone={TrendingUp}
+            valor="— (em breve)"
+            label="Taxa de Conversão"
+            corDe="#7c3aed"
+            corPara="#6d28d9"
+          />
+        </div>
+
+        {erro && <p className="text-xs text-red-500">{erro}</p>}
+
+        {/* Pódio (top 3) */}
+        {!carregando && ranking.length > 0 && (
+          <div className={`rounded-2xl border p-5 ${tema.card}`}>
+            <div className="flex items-end justify-center gap-4">
+              {[1, 0, 2].map((indice) => {
+                const v = ranking[indice];
+                if (!v) return null;
+                const posicao = indice + 1;
+                const alturas = { 1: 'h-16', 0: 'h-24', 2: 'h-12' };
+                return (
+                  <div key={v.vendedorId ?? v.nome} className="flex flex-col items-center gap-1.5">
+                    <Medal
+                      size={18}
+                      className={
+                        posicao === 1
+                          ? 'text-amber-400'
+                          : posicao === 2
+                          ? 'text-slate-300'
+                          : 'text-orange-700'
+                      }
+                    />
+                    <p className={`text-xs font-semibold ${tema.textoPrimario}`}>{v.nome}</p>
+                    <p className={`text-[11px] ${tema.textoSecundario}`}>
+                      {v.contratosPendentes} contrato{v.contratosPendentes === 1 ? '' : 's'}
+                    </p>
+                    <div
+                      className={`flex w-20 items-center justify-center rounded-t-lg text-lg font-bold text-white ${alturas[indice]}`}
+                      style={{
+                        background:
+                          posicao === 1
+                            ? 'linear-gradient(135deg, #fbbf24, #d97706)'
+                            : posicao === 2
+                            ? 'linear-gradient(135deg, #cbd5e1, #94a3b8)'
+                            : 'linear-gradient(135deg, #c2703d, #9a5227)',
+                      }}
+                    >
+                      {posicao}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tabela detalhada por vendedor */}
+        <div className={`overflow-hidden rounded-2xl border ${tema.card}`}>
+          <div className={`border-b px-4 py-3 ${tema.headerBorda}`}>
+            <h2
+              className="text-sm font-semibold"
+              style={{ color: tema.escuro ? '#f1f5f9' : '#0f172a' }}
+            >
+              Detalhamento por vendedor
+            </h2>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className={`text-left text-xs ${tema.textoSecundario}`}>
+                <th className="px-4 py-2 font-medium">Posição</th>
+                <th className="px-4 py-2 font-medium">Vendedor</th>
+                <th className="px-4 py-2 font-medium">Contratos Pendentes</th>
+                <th className="px-4 py-2 font-medium">Cancelados</th>
+                <th className="px-4 py-2 font-medium">Conectados</th>
+                <th className="px-4 py-2 font-medium">Taxa Conversão</th>
+              </tr>
+            </thead>
+            <tbody>
+              {carregando && (
+                <tr>
+                  <td colSpan={6} className={`px-4 py-4 text-center text-xs ${tema.textoTerciario}`}>
+                    Carregando ranking...
+                  </td>
+                </tr>
+              )}
+              {!carregando && ranking.length === 0 && (
+                <tr>
+                  <td colSpan={6} className={`px-4 py-4 text-center text-xs ${tema.textoTerciario}`}>
+                    Nenhum contrato fechado ainda.
+                  </td>
+                </tr>
+              )}
+              {!carregando &&
+                ranking.map((v, indice) => (
+                  <tr key={v.vendedorId ?? v.nome} className={`border-t ${tema.headerBorda}`}>
+                    <td className="px-4 py-2.5">
+                      <BadgePosicao posicao={indice + 1} />
+                    </td>
+                    <td className={`px-4 py-2.5 font-medium ${tema.textoPrimario}`}>{v.nome}</td>
+                    <td className={`px-4 py-2.5 ${tema.textoPrimario}`}>{v.contratosPendentes}</td>
+                    <td className={`px-4 py-2.5 ${tema.textoTerciario}`}>—</td>
+                    <td className={`px-4 py-2.5 ${tema.textoTerciario}`}>—</td>
+                    <td className={`px-4 py-2.5 ${tema.textoTerciario}`}>—</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <p className={`text-[11px] ${tema.textoTerciario}`}>
+          Cancelados, Conectados e Taxa de Conversão ainda não são rastreados — assim que o status
+          "Conectado" for aplicado na tabela <code>contrato</code>, esses números passam a ser
+          calculados automaticamente.
+        </p>
       </div>
     </div>
   );
@@ -1527,7 +2165,7 @@ export default function PainelCRM({ usuario }) {
   const [buscaClientes, setBuscaClientes] = useState('');
   const [filtroRoxo, setFiltroRoxo] = useState('meus'); // 'meus' | 'todos' — só usado por vendedor
   const [contratosPorCliente, setContratosPorCliente] = useState({});
-  const [telaAtual, setTelaAtual] = useState('painel'); // 'painel' | 'viabilidade'
+  const [telaAtual, setTelaAtual] = useState('painel'); // 'painel' | 'viabilidade' | 'ranking'
   const tema = useTema(escuro);
   const navigate = useNavigate();
 
@@ -1582,7 +2220,7 @@ export default function PainelCRM({ usuario }) {
     async function carregarContratos() {
       const { data, error } = await supabase
         .from('contrato')
-        .select('cliente_id, nome, contrato, cidade, estado, telefone_1, telefone_2, hp, data_instalacao, auditado');
+        .select('cliente_id, nome, contrato, cidade, estado, telefone_1, telefone_2, hp, data_instalacao, horario_instalacao, auditado, auditoria_perguntada_em, auditoria_confirmada, auditoria_resposta');
 
       if (error) {
         console.error('Erro ao buscar contratos:', error);
@@ -1622,6 +2260,41 @@ export default function PainelCRM({ usuario }) {
   async function handleSair() {
     await supabase.auth.signOut();
     navigate('/login');
+  }
+
+  // Exclui um cliente e tudo que depende dele. A ORDEM importa: se apagar
+  // "clientes" primeiro, as tabelas que têm cliente_id como chave estrangeira
+  // (contrato, mensagens) travam o DELETE com erro de foreign key — foi
+  // exatamente isso que bloqueou os comandos SQL rodados manualmente.
+  // A lista atualiza sozinha por causa do realtime (não precisa dar F5).
+  async function handleExcluirCliente(lead) {
+    const nomeExibido = lead.nome || 'este cliente';
+    const confirmou = window.confirm(
+      `Excluir "${nomeExibido}" (${formatarTelefone(lead.telefone)})? Isso apaga o cliente, o contrato e as mensagens dele. Não dá pra desfazer.`
+    );
+    if (!confirmou) return;
+
+    const { error: erroContrato } = await supabase.from('contrato').delete().eq('cliente_id', lead.id);
+    if (erroContrato) {
+      console.error('Erro ao excluir contrato:', erroContrato);
+      alert('Não consegui apagar o contrato desse cliente. Confere a policy de DELETE na tabela "contrato".');
+      return;
+    }
+
+    const { error: erroMensagens } = await supabase.from('mensagens').delete().eq('cliente_id', lead.id);
+    if (erroMensagens) {
+      console.error('Erro ao excluir mensagens:', erroMensagens);
+      alert('Não consegui apagar as mensagens desse cliente. Confere a policy de DELETE na tabela "mensagens".');
+      return;
+    }
+
+    const { error: erroCliente } = await supabase.from('clientes').delete().eq('id', lead.id);
+    if (erroCliente) {
+      console.error('Erro ao excluir cliente:', erroCliente);
+      alert('Não consegui apagar o cliente. Confere a policy de DELETE na tabela "clientes" (e se sobrou algo referenciando o id dele).');
+    }
+    // Histórico de conversa do bot (n8n_chat_histories) fica de fora de propósito:
+    // é tabela interna do n8n, o painel não deveria depender de mexer nela.
   }
 
   async function handlePegarCliente(lead) {
@@ -1767,6 +2440,8 @@ export default function PainelCRM({ usuario }) {
 
         {telaAtual === 'viabilidade' && <TelaViabilidade tema={tema} />}
 
+        {telaAtual === 'ranking' && <TelaRanking tema={tema} />}
+
         {telaAtual === 'painel' && (
         <div className="overflow-x-auto p-5">
           {carregando ? (
@@ -1779,6 +2454,7 @@ export default function PainelCRM({ usuario }) {
                   leads={todosClientesFiltrados}
                   tema={tema}
                   onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                   headerExtra={
                     <button
                       type="button"
@@ -1825,6 +2501,7 @@ export default function PainelCRM({ usuario }) {
                   leads={vermelhosDisponiveis}
                   tema={tema}
                   onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                   onPegarLead={handlePegarCliente}
                   pegandoId={pegandoId}
                   accent={STATUS_CONFIG.vermelho.accent}
@@ -1836,6 +2513,7 @@ export default function PainelCRM({ usuario }) {
                 leads={porStatus('branco')}
                 tema={tema}
                 onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                 accent={STATUS_CONFIG.branco.accent}
               />
               <BlocoStatus
@@ -1843,6 +2521,7 @@ export default function PainelCRM({ usuario }) {
                 leads={porStatus('vermelho')}
                 tema={tema}
                 onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                 accent={STATUS_CONFIG.vermelho.accent}
               />
               <BlocoStatus
@@ -1850,6 +2529,7 @@ export default function PainelCRM({ usuario }) {
                 leads={porStatus('verde')}
                 tema={tema}
                 onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                 onFecharContrato={setLeadFechandoContrato}
                 accent={STATUS_CONFIG.verde.accent}
               />
@@ -1858,6 +2538,7 @@ export default function PainelCRM({ usuario }) {
                 leads={roxosVisiveis}
                 tema={tema}
                 onAbrirLead={setLeadAberto}
+                  onExcluir={handleExcluirCliente}
                 accent={STATUS_CONFIG.roxo.accent}
                 renderCard={(lead) => (
                   <CartaoContratoRoxo
@@ -1865,6 +2546,7 @@ export default function PainelCRM({ usuario }) {
                     lead={lead}
                     contrato={contratosPorCliente[lead.id]}
                     tema={tema}
+                    onExcluir={handleExcluirCliente}
                   />
                 )}
                 headerExtra={
